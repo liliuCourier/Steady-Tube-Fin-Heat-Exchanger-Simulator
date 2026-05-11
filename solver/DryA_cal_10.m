@@ -64,7 +64,7 @@ cp_CV   =       (cp_air_in + cp_air_out)/2;
 vin =   Ra*Tin./(pin*1e6);                              % m^3/kg    控制体进口比容，采用理想气体方程计算
 vout =   Ra*Tout./(pout*1e6);
 
-%% 关联式区域
+%% Correlation area关联式区域
 A_total = L_fin*L;                                                  % m^2   在发生截面收缩之前的总通流面积
 velocity_in = abs(mdot).*vin/(A_total/row/CV_num);
 velocity_out = abs(mdot).*vout/(A_total/row/CV_num);                  % m/s   对应的进口速度

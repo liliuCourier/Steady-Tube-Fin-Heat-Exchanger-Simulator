@@ -24,6 +24,8 @@ p_CV = (pin + pout)/2;
 % 物性调用
 veloctiy_CV = (mdot/D_CV)/S;
 
+%% Correlation area 关联式区域
+
 Re_1P = abs(veloctiy_CV)*D_inner./(Nu_CV*1e-6);
 Re_2P = abs(mdot).*(1-x_CV + x_CV.*sqrt(vsatvap_CV./vsatliq_CV))*D_inner/S./(Nusatliq_CV*1e-6./vsatliq_CV);
 
@@ -80,7 +82,6 @@ dp_f_CV =   (f_CV*L/CV_num).*(mdot.^2)./(2*D_CV*D_inner*S^2);    % Pa  摩擦压
 dp_v_CV =   16*mdot.^2/(pi^2*D_inner^4).*(1./Dout_CV - 1./Din_CV);   % Pa  速度压损
 dp =    (dp_f_CV + dp_v_CV);
 
-
 % 单相换热采用Gnielinski公式
 Nu_1P_CV = (f_CV/8.*max(Re_1P - 1000,0).*Pr_CV)./(1+12.7*sqrt(f_CV/8).*(Pr_CV.^(2/3)-1));
 h_1P_CV = k_CV.*Nu_1P_CV/D_inner;
@@ -99,10 +100,7 @@ w2 = min(max((x_CV - (1 - transition_range)) / transition_range, 0), 1);
 h_R = h_mix_1 .* (1 - w2) + h_1P_CV .* w2;
 dEF = mdot.*(hin - hout);
 
-if h_R == 0
-    pause()
-end
-
+%%
 out{1} = Tin_CV;
 out{2} = Tout_CV;
 out{3} = h_R;

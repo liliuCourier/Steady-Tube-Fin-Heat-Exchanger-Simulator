@@ -1,10 +1,10 @@
 % 主求解器
-
 %%
 if ~exist('Prop_handle','var')
     refprop_location = 'E:\refprop10\REFPROP';
     R = 'R134a';
     %示例：
+    % p-Mpa\h-kJ/kg
     % Prop_handle = Prop_load(refprop_location,R,pmin,pmax,hmin,hmax,p_point,u_vap_point,u_liq_point);
     Prop_handle = Prop_load(refprop_location,R,1e-3,5.5,80,510,100,25,25);
 end
