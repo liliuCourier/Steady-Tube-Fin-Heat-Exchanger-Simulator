@@ -2,6 +2,12 @@
 % 运行此脚本完成流路设计、几何设置、边界条件设置
 % 完成后运行 Main 即可开始求解
 
+% 添加子模块路径
+root = fileparts(mfilename('fullpath'));
+addpath(fullfile(root, 'PreProc'));
+addpath(fullfile(root, 'Lib'));
+addpath(fullfile(root, 'Solver'));
+
 %% 0. 物性加载（如未加载）
 if ~exist('Prop_handle', 'var')
     refprop_location = 'E:\refprop10\REFPROP';

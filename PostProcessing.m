@@ -1,8 +1,11 @@
 % PostProcessing — 后处理集成入口 (Demo1.02)
 % 仿真完成后运行此脚本，一键生成全部可视化与性能报告
 
-% 添加后处理函数路径
-addpath(fullfile(fileparts(mfilename('fullpath')), 'PostProcessing'));
+% 添加子模块路径
+root = fileparts(mfilename('fullpath'));
+addpath(fullfile(root, 'PostProcessing'));
+addpath(fullfile(root, 'Lib'));
+addpath(fullfile(root, 'Solver'));
 
 %% 1. 沿线物性分布曲线
 plotAlongPath(heatPaths, h_R_in, h_R_out, p_R_in, p_R_out, ...

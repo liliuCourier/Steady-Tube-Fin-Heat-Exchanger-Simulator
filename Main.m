@@ -1,4 +1,12 @@
 % 主求解器 — 运行前请先执行 PreProcessing 完成流路/几何/边界设置
+
+% 添加子模块路径
+root = fileparts(mfilename('fullpath'));
+addpath(fullfile(root, 'Lib'));
+addpath(fullfile(root, 'Solver'));
+addpath(fullfile(root, 'PostProcessing'));
+addpath(fullfile(root, 'PreProc'));
+
 %%
 % if ~exist('Prop_handle','var')
 %     refprop_location = 'E:\refprop10\REFPROP';
