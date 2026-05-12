@@ -16,7 +16,7 @@ plotLoopBalance(N, R_flow, mdot0, mdot_R, dp_tube, u0, options);
 
 %% 4. 整体性能汇总表
 summaryTable(TCinf, GeoCondition, BDCondition, h_R_in, h_R_out, ...
-    p_R_in, p_R_out, T_MA_in, T_MA_out, mdot_R, dp_tube, heatPaths, time, Prop_handle);
+    p_R_in, p_R_out, T_MA_in, T_MA_out, mdot_R, dp_tube, heatPaths, time, Prop_handle, N);
 
 %% 5. 收敛历史
 % 修剪未使用的预分配

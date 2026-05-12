@@ -69,7 +69,7 @@ end
 hxPerf.Performance = struct();
 hxPerf.Performance.Q_total       = sum(heatload_tube);
 hxPerf.Performance.Q_tube        = heatload_tube;
-hxPerf.Performance.dp_total      = (max(p_R_in(1,:)) - min(p_R_out(end,:))) * 1e6;
+hxPerf.Performance.dp_total      = (p_R_in(1, TCinf.inlet_num(1)) - p_R_out(end, TCinf.outlet_num(1))) * 1e6;
 hxPerf.Performance.T_R_out       = T_R_out;
 hxPerf.Performance.x_R_out       = x_R_out;
 hxPerf.Performance.residual_max   = residual_max;

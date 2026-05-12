@@ -1,5 +1,5 @@
 function summaryTable(TCinf, GeoCondition, BDCondition, h_R_in, h_R_out, ...
-    p_R_in, p_R_out, T_MA_in, T_MA_out, mdot_R, dp_tube, heatPaths, time, Prop_handle)
+    p_R_in, p_R_out, T_MA_in, T_MA_out, mdot_R, dp_tube, heatPaths, time, Prop_handle, N)
 % 换热器整体性能汇总表：输出关键性能指标到命令行
 
 Tube_num = GeoCondition.Tube_num;
@@ -18,8 +18,11 @@ end
 heatload_total = sum(heatload_tube);
 
 % ---- 压降计算 ----
-dp_total = (max(p_R_in(1,:)) - min(p_R_out(end,:))) * 1e6;  % Pa
-dp_tube_total = sum(dp_tube) * 1e6;  % Pa (dp_tube 为 MPa)
+% 集管压降：进口集管压力 - 出口集管压力 (适用于有无环路)
+p_in_header  = p_R_in(1, inlet_num(1));      % MPa, 进口集管
+p_out_header = p_R_out(end, outlet_num(1));   % MPa, 出口集管
+dp_total = (p_in_header - p_out_header) * 1e6;  % Pa
+has_loops = ~isempty(N) && size(N,2) > 0;
 
 % ---- 流量分配 ----
 mdot_total = sum(mdot_R);
@@ -61,9 +64,14 @@ fprintf('║    最小传热温差: %6.2f K                     ║\n', min(dT_t
 fprintf('╠══════════════════════════════════════════════╣\n');
 fprintf('║  流动性能                                    ║\n');
 fprintf('║    工质总流量: %8.4f kg/s                   ║\n', mdot_total);
-fprintf('║    工质总压降: %8.1f Pa                     ║\n', dp_total);
-fprintf('║    各管压降之和: %6.1f Pa                    ║\n', dp_tube_total);
-fprintf('║    各管流量: 均匀分配 (%.4f kg/s/管)         ║\n', mean(mdot_R));
+fprintf('║    集管总压降: %8.1f Pa                     ║\n', dp_total);
+if ~has_loops
+    dp_tube_total = sum(dp_tube) * 1e6;
+    fprintf('║    各管压降之和: %6.1f Pa (串联)             ║\n', dp_tube_total);
+else
+    fprintf('║    环路数: %d (各管压降之和无意义)           ║\n', size(N,2));
+end
+fprintf('║    各管流量范围: %.4f ~ %.4f kg/s            ║\n', min(mdot_R), max(mdot_R));
 fprintf('╠══════════════════════════════════════════════╣\n');
 fprintf('║  各管换热量占比                              ║\n');
 for t = 1:Tube_num
