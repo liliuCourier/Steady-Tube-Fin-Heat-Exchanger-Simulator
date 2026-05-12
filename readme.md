@@ -8,56 +8,34 @@
 
 第一个适用于管翅式稳态仿真的 MATLAB 程序（工程）。在 Demo1.0 版本中只支持干工况。架构可以自己看，内容不多。
 
-### 5/12 Demo1.01
+### 5/12 Demo1.1
 
-基于 Demo1.0，修复了一个重大 bug：在无环路简单流路中，基向量 $N$ 为空，所有管路流量由进口唯一确定，不存在自由变量。此时 `mdot_Initial.m` 中 $u_0 = N \setminus (m_{init} - m_0)$ 会因 $N$ 为空而报错，且 `Main.m` 中 `fsolve` 收到空初值同样报错。
+基于 Demo1.0 全面重构：修复无环路求解 bug、完成后处理六层模块、重构预处理工作流、工程目录模块化。
 
-**修复内容：**
+**架构变更：**
+- 根目录仅保留 3 个入口脚本：`PreProcessing.m` `Main.m` `PostProcessing.m`
+- 函数按模块分入 `PreProc/` `Solver/` `Lib/` `PostProcessing/` 四个子目录
+- 求解与前处理完全分离：先运行 `PreProcessing` 完成三类设置，再运行 `Main` 求解
 
-1. `mdot_Initial.m`：检测 $N$ 是否为空，为空时直接设 $u_0 = []$。
-2. `Main.m`：将求解循环分为有环路 / 无环路两套逻辑：
-   - **无环路**：广度优先扫描 → 直接第二次广度优先压力场更新 → 残差收敛即退出，完全跳过环路压降扫描和流量重分配。
-   - **有环路**：保持原有逻辑不变（环路压降扫描 → 流量重分配 → 压力场更新 → 二次流量重分配 → 环路压降收敛判断）。
+**Bug 修复：**
+- 无环路时 `N` 为空导致 `fsolve` 报错 → 检测 `N` 是否为空，有/无环路分离两套迭代逻辑
 
-### 5/12 Demo1.02
+**预处理模块（PreProcessing.m + PreProc/）：**
+- `HX_Path_Planner1`：流路设计窗口持久化（关闭=隐藏），`hxDesigner` 句柄常驻，增量导出对比
+- `GenerateGeo`：交互式几何参数对话框（管长/管径/翅片间距等 8 项）
+- `GenerateBD`：交互式边界条件对话框（工质/空气进口参数 + 控制容积数 CV_num）
 
-完成后处理六层模块，提供从流路验证到性能汇总的完整可视化与数据导出能力。所有后处理函数统一放置在 `PostProcessing/` 子目录中，`PostProcessing.m` 作为一键集成入口。
+**求解模块（Main.m + Solver/）：**
+- 收敛历史自动记录，求解完成后自动触发 `PostProcessing`
+- 有环路：环路压降扫描 → fsolve 流量重分配 → 压力更新 → 二次重分配 → 收敛
+- 无环路：广度优先扫描 → 直接压力更新 → 残差收敛
 
-**新增模块与生成图像：**
-
-1. **`PostProcessing/plotAlongPath.m`** — 沿线物性分布（2×2 子图面板）
-   - 子图1：工质出口温度 + 空气平均温度沿 BFS 管序变化
-   - 子图2：工质平均压力（左轴）+ 各管压降（右轴柱状图）
-   - 子图3：各管换热量柱状图，标注占比百分比
-   - 子图4：沿程累积压降曲线
-
-2. **`PostProcessing/plotLoopBalance.m`** — 环路性能对比（双图）
-   - 左图：每个环路两支路压降分组柱状图（正向 vs 反向），标注不平衡量
-   - 右图：各环路压降不平衡量柱状图（越矮越平衡）
-   - 无环路时自动跳过
-
-3. **`PostProcessing/summaryTable.m`** — 控制台整体性能汇总表
-   - 基本参数：管排布局、进出口管号、计算耗时
-   - 热力性能：总换热量、进出口温度、最小传热温差
-   - 流动性能：总流量、总压降、各管压降之和、各管流量
-   - 各管换热量占比（含 ASCII 进度条）
-   - 各管出口状态矩阵（焓/压力/温度/压降/换热量）
-
-4. **`PostProcessing/exportHxPerf.m`** — 标准化 `hxPerf` 结构体导出，供 `fmincon`、遗传算法等优化器直接调用
-
-5. **`Main.m`** — 新增迭代收敛历史日志（`residual_history`、`dp_loop_history`），`PostProcessing.m` 绘制双图：
-   - 左图：能量残差随迭代次数的收敛曲线（对数坐标）
-   - 右图：环路压降残差收敛曲线（无环路时显示 N/A）
-
-6. **`PostProcessing.m`** — 一键集成入口，自动调用上述全部模块
-
-7. **`HX_Path_Planner1.m`** — 流路设计窗口持久化与增量导出
-   - Figure 添加唯一 `Tag` + 句柄持久化到 `hxDesigner`，随时 `figure(hxDesigner)` 唤出
-   - 点击关闭按钮隐藏窗口而非销毁，设计会话不丢失
-   - 设计变更后标题栏显示 `[已修改，未导出]`，导出后自动清除
-   - 导出时对比上次 `TCinf`，输出拓扑/进出口变化摘要
-   - 左侧添加绿色箭头 + `AIR` 标注指示进风方向
-   - `Main.m` 求解完成后自动弹回设计窗口
+**后处理模块（PostProcessing 自动触发）：**
+1. `plotAlongPath.m` — 2×2 沿线物性分布曲线（温度/压力/换热量/累积压降）
+2. `plotLoopBalance.m` — 环路压降平衡双图（支路对比 + 不平衡量），无环路自动跳过
+3. `summaryTable.m` — 控制台性能汇总表（换热量/压降/温差/各管占比/出口状态矩阵）
+4. 收敛历史双图 — 能量残差 + 环路压降残差（对数坐标）
+5. `exportHxPerf.m` — 标准化 `hxPerf` 结构体，供优化器直接调用
 
 ### 仿真流程
 
@@ -86,19 +64,37 @@
 
 ### 注意事项
 
-#### 1. 物性数据获取
+#### ⚠️ 1. 物性数据获取（运行前必读）
 
-在 `main` 求解主程序中，本程序使用 **Refprop** 获取物性数据，因此用户需要提供其 Refprop 安装位置（`Refprop.dll` 所在位置），并将 `R` 填写为 Refprop 支持的工质。
+本程序使用 **REFPROP** 获取工质与湿空气物性。`Prop_load` 在 `PreProcessing.m` 和 `Main.m` 中均会调用（如未提前加载）。
 
-示例：
+**必须修改以下配置以匹配你的环境：**
+
 ```matlab
-refprop_location = 'E:\refprop10\REFPROP';
-R = 'R134a';
-% Prop_handle = Prop_load(refprop_location,R,pmin,pmax,hmin,hmax,p_point,u_vap_point,u_liq_point);
-Prop_handle = Prop_load(refprop_location,R,1e-3,5.5,80,510,100,25,25);
+% 在 PreProcessing.m 和 Main.m 开头修改：
+refprop_location = 'E:\refprop10\REFPROP';   % ← 改为你的 REFPROP 安装路径（Refprop.dll 所在目录）
+R = 'R134a';                                   % ← 改为你需要的工质（REFPROP 支持的命名）
+% Prop_load 调用格式:
+% Prop_load(libLoc, R, pmin, pmax, hmin, hmax, p_point, u_vap_point, u_liq_point)
+Prop_handle = Prop_load(refprop_location, R, 1e-3, 5.5, 80, 510, 100, 25, 25);
+%                                            ↑     ↑    ↑   ↑    ↑    ↑
+%                                          p_min  p_max h_min h_max p_pt h_pt
 ```
 
-调用的物性大致需要一个有效压力范围和有效焓范围（求解器基于压力和焓进行求解）。
+**参数说明：**
+
+| 参数 | 含义 | 当前默认值 | 注意 |
+|------|------|-----------|------|
+| `pmin / pmax` | 有效压力范围 (MPa) | 1e-3 ~ 5.5 | 必须覆盖工况压力范围 |
+| `hmin / hmax` | 有效焓范围 (kJ/kg) | 80 ~ 510 | 必须覆盖工况焓范围 |
+| `p_point` | 压力离散点数 | 100 | 越大插值越精确，加载越慢 |
+| `u_vap_point` | 气相归一化焓离散点 | 25 | 同上 |
+| `u_liq_point` | 液相归一化焓离散点 | 25 | 同上 |
+
+**常见问题：**
+- 如果仿真过程中某管压力/焓超出上述范围，`Prop1` 会因插值外推而报错或返回异常值
+- 若出现 `getFluidProperty` 未定义，请检查 REFPROP 是否正确安装且 MATLAB 路径包含 REFPROP 目录
+- 不同工质（如 R410A）的饱和压力和焓范围差异很大，更换工质时务必调整 `pmin/pmax/hmin/hmax`
 
 #### 2. 关联式选择
 
@@ -129,56 +125,34 @@ Prop_handle = Prop_load(refprop_location,R,1e-3,5.5,80,510,100,25,25);
 First MATLAB program (project) for steady-state simulation of tube-fin heat exchangers. Demo1.0 only supports dry-surface conditions.  
 You can check the architecture yourself – it's not complicated.
 
-### 5/12 Demo1.01 Release
+### 5/12 Demo1.1 Release
 
-Based on Demo1.0, this release fixes a critical bug: in simple circuits without loops, the null-space basis $N$ is empty, meaning all tube flow rates are uniquely determined by the inlet flow rate with no free variables. Previously `mdot_Initial.m` would fail computing $u_0 = N \setminus (m_{init} - m_0)$ with an empty $N$, and `Main.m` would fail when `fsolve` received an empty initial point.
+Comprehensive refactoring from Demo1.0: fixed no-loop solver bug, completed six-layer post-processing suite, restructured preprocessing workflow, and modularized the project directory.
 
-**Fixes:**
+**Architecture changes:**
+- Root directory contains only 3 entry scripts: `PreProcessing.m` `Main.m` `PostProcessing.m`
+- Functions organized into 4 subdirectories: `PreProc/` `Solver/` `Lib/` `PostProcessing/`
+- Solving fully decoupled from preprocessing: run `PreProcessing` first for three setup steps, then `Main` for solving
 
-1. `mdot_Initial.m`: Detect empty $N$ and set $u_0 = []$ directly.
-2. `Main.m`: Split the iteration loop into two logic branches:
-   - **No loops**: breadth-first scan → direct second breadth-first pressure update → exit on residual convergence, skipping loop pressure drop scan and flow redistribution entirely.
-   - **With loops**: original logic preserved.
+**Bug fixes:**
+- Empty `N` null-space causing `fsolve` failure → two-branch iteration logic for with/without loops
 
-### 5/12 Demo1.02 Release
+**Preprocessing (PreProcessing.m + PreProc/):**
+- `HX_Path_Planner1`: persistent design window (close = hide), `hxDesigner` handle, incremental export diff
+- `GenerateGeo`: interactive geometry parameter dialog (8 parameters including tube length/diameters/fin pitch)
+- `GenerateBD`: interactive boundary condition dialog (refrigerant/air inlet + CV_num)
 
-Completed a six-layer post-processing suite providing full visualization and data export — from circuit design verification to performance summaries. All post-processing functions reside in the `PostProcessing/` subdirectory, with `PostProcessing.m` as the one-click entry point.
+**Solver (Main.m + Solver/):**
+- Convergence history auto-logged; `PostProcessing` auto-triggered after solving
+- With loops: loop pressure scan → fsolve flow redistribution → pressure update → second redistribution → converge
+- Without loops: BFS scan → direct pressure update → residual convergence
 
-**New modules and generated figures:**
-
-1. **`PostProcessing/plotAlongPath.m`** — Parameter distribution along BFS path (2×2 subplot panel)
-   - Subplot 1: Refrigerant outlet temperature + air average temperature along path
-   - Subplot 2: Refrigerant average pressure (left axis) + per-tube pressure drop (right axis bar)
-   - Subplot 3: Per-tube heat load bar chart with percentage labels
-   - Subplot 4: Cumulative pressure drop along path
-
-2. **`PostProcessing/plotLoopBalance.m`** — Loop balance verification (dual-panel)
-   - Left: Grouped bar chart of forward vs. reverse branch pressure drop for each loop, with imbalance annotations
-   - Right: Loop pressure imbalance bar chart (shorter = more balanced)
-   - Auto-skips when no loops exist
-
-3. **`PostProcessing/summaryTable.m`** — Console overall performance summary table
-   - Basic parameters: tube layout, inlet/outlet tube numbers, computation time
-   - Thermal performance: total heat load, inlet/outlet temperatures, minimum approach temperature
-   - Flow performance: total mass flow, total pressure drop, per-tube flow rates
-   - Per-tube heat load percentages (with ASCII bar chart)
-   - Per-tube outlet state matrix (enthalpy/pressure/temperature/pressure drop/heat load)
-
-4. **`PostProcessing/exportHxPerf.m`** — Standardized `hxPerf` struct export for direct use by `fmincon`, genetic algorithms, and other optimizers
-
-5. **`Main.m`** — Added iteration convergence history logging (`residual_history`, `dp_loop_history`), with dual-panel plot in `PostProcessing.m`:
-   - Left: Energy residual vs. iteration (log scale)
-   - Right: Loop pressure residual convergence (N/A when no loops)
-
-6. **`PostProcessing.m`** — One-click entry point that calls all modules above
-
-7. **`HX_Path_Planner1.m`** — Persistent design window + incremental export
-   - Unique `Tag` + handle persisted as `hxDesigner` in workspace; call `figure(hxDesigner)` anytime
-   - Close button hides the window instead of destroying it; design session survives
-   - Title bar shows `[已修改，未导出]` when circuit is modified, cleared on export
-   - Incremental export: compares with last `TCinf`, prints diff summary (topology, inlets, outlets)
-   - Green arrow + `AIR` label on the left side indicates air inlet direction
-   - `Main.m` automatically brings the design window back after solving
+**Post-processing (auto-triggered from Main.m):**
+1. `plotAlongPath.m` — 2×2 parameter distribution curves (temperature/pressure/heat load/cumulative dp)
+2. `plotLoopBalance.m` — Loop pressure balance dual-chart (branch comparison + imbalance), auto-skips if no loops
+3. `summaryTable.m` — Console performance summary (heat load/dp/temperatures/per-tube breakdown/outlet state matrix)
+4. Convergence history dual-plot — energy residual + loop pressure residual (log scale)
+5. `exportHxPerf.m` — Standardized `hxPerf` struct for optimizer integration
 
 ### Simulation Workflow
 
@@ -207,19 +181,35 @@ Completed a six-layer post-processing suite providing full visualization and dat
 
 ### Important Notes
 
-#### 1. Property data
+#### ⚠️ 1. Property data (must read before running)
 
-In the main solver, Refprop is used to obtain fluid properties. The user must provide the Refprop installation path (the directory containing `Refprop.dll`) and specify the refrigerant `R` supported by Refprop.
+REFPROP is used for refrigerant and moist-air property data. `Prop_load` is called in both `PreProcessing.m` and `Main.m` (if not already loaded).
 
-Example:
+**You must modify these settings to match your environment:**
+
 ```matlab
-refprop_location = 'E:\refprop10\REFPROP';
-R = 'R134a';
-% Prop_handle = Prop_load(refprop_location,R,pmin,pmax,hmin,hmax,p_point,u_vap_point,u_liq_point);
-Prop_handle = Prop_load(refprop_location,R,1e-3,5.5,80,510,100,25,25);
+% In PreProcessing.m and Main.m:
+refprop_location = 'E:\refprop10\REFPROP';   % ← Change to your REFPROP path
+R = 'R134a';                                   % ← Change to your desired fluid
+% Prop_load signature:
+% Prop_load(libLoc, R, pmin, pmax, hmin, hmax, p_point, u_vap_point, u_liq_point)
+Prop_handle = Prop_load(refprop_location, R, 1e-3, 5.5, 80, 510, 100, 25, 25);
 ```
 
-The required property calls need a valid pressure range and enthalpy range (the solver works with pressure and enthalpy).
+**Parameter guide:**
+
+| Parameter | Meaning | Default | Note |
+|-----------|---------|---------|------|
+| `pmin / pmax` | Valid pressure range (MPa) | 1e-3 ~ 5.5 | Must span your operating pressures |
+| `hmin / hmax` | Valid enthalpy range (kJ/kg) | 80 ~ 510 | Must span your operating enthalpies |
+| `p_point` | Pressure discretization points | 100 | More = finer interpolation, slower load |
+| `u_vap_point` | Vapor normalized-enthalpy points | 25 | Same tradeoff |
+| `u_liq_point` | Liquid normalized-enthalpy points | 25 | Same tradeoff |
+
+**Common issues:**
+- If a tube's pressure/enthalpy exceeds the above ranges during simulation, `Prop1` will error or return invalid values due to extrapolation
+- If `getFluidProperty` is undefined, check that REFPROP is installed and its directory is on the MATLAB path
+- Different fluids (e.g., R410A) have very different saturation pressures and enthalpy ranges — adjust `pmin/pmax/hmin/hmax` accordingly
 
 #### 2. Correlation selection
 
