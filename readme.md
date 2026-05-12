@@ -8,7 +8,7 @@
 
 第一个适用于管翅式稳态仿真的 MATLAB 程序（工程）。在 Demo1.0 版本中只支持干工况。架构可以自己看，内容不多。
 
-### 5/12 Demo1.01
+### ### 5/12 Demo1.01
 
 基于 Demo1.0，修复了一个重大 bug：在无环路简单流路中，基向量 $N$ 为空，所有管路流量由进口唯一确定，不存在自由变量。此时 `mdot_Initial.m` 中 $u_0 = N \setminus (m_{init} - m_0)$ 会因 $N$ 为空而报错，且 `Main.m` 中 `fsolve` 收到空初值同样报错。
 
@@ -18,6 +18,19 @@
 2. `Main.m`：将求解循环分为有环路 / 无环路两套逻辑：
    - **无环路**：广度优先扫描 → 直接第二次广度优先压力场更新 → 残差收敛即退出，完全跳过环路压降扫描和流量重分配。
    - **有环路**：保持原有逻辑不变（环路压降扫描 → 流量重分配 → 压力场更新 → 二次流量重分配 → 环路压降收敛判断）。
+
+### 5/12 Demo1.02
+
+完成后处理六层模块，提供从流路验证到性能汇总的完整可视化与数据导出能力。所有后处理函数统一放置在 `PostProcessing/` 子目录中，`PostProcessing.m` 作为一键集成入口。
+
+**新增模块：**
+
+1. `PostProcessing/plotTubeLayout.m` — 流路拓扑可视化：管排网格 + 流向箭头 + 进出口高亮标记。
+2. `PostProcessing/plotAlongPath.m` — 沿线物性分布曲线：温度、压力、换热量、压降累积沿广度优先管序绘制。
+3. `PostProcessing/plotLoopBalance.m` — 环路性能对比：两支路压降平衡验证 + 残差函数曲线，无环路时自动跳过。
+4. `PostProcessing/summaryTable.m` — 整体性能汇总表：总换热量、压降、温差、各管换热量占比等关键指标。
+5. `PostProcessing/exportHxPerf.m` — 标准化 `hxPerf` 结构体导出，供 `fmincon`、遗传算法等优化器直接调用。
+6. `Main.m` — 新增迭代收敛历史日志（`residual_history`、`dp_loop_history`），`PostProcessing.m` 中绘制收敛曲线。
 
 ### 仿真流程
 
@@ -97,6 +110,19 @@ Based on Demo1.0, this release fixes a critical bug: in simple circuits without 
 2. `Main.m`: Split the iteration loop into two logic branches:
    - **No loops**: breadth-first scan → direct second breadth-first pressure update → exit on residual convergence, skipping loop pressure drop scan and flow redistribution entirely.
    - **With loops**: original logic preserved.
+
+### 5/12 Demo1.02 Release
+
+Completed a six-layer post-processing suite providing full visualization and data export — from circuit design verification to performance summaries. All post-processing functions reside in the `PostProcessing/` subdirectory, with `PostProcessing.m` as the one-click entry point.
+
+**New modules:**
+
+1. `PostProcessing/plotTubeLayout.m` — Flow topology visualization: tube grid + flow direction arrows + inlet/outlet highlights.
+2. `PostProcessing/plotAlongPath.m` — Parameter distribution along BFS path: temperature, pressure, heat load, and cumulative pressure drop.
+3. `PostProcessing/plotLoopBalance.m` — Loop balance verification: branch pressure drop comparison + residual function curves; auto-skips when no loops exist.
+4. `PostProcessing/summaryTable.m` — Overall performance summary table: total heat load, pressure drop, temperature differences, per-tube heat load percentages.
+5. `PostProcessing/exportHxPerf.m` — Standardized `hxPerf` struct export for direct use by `fmincon`, genetic algorithms, and other optimizers.
+6. `Main.m` — Added iteration convergence history logging (`residual_history`, `dp_loop_history`), with convergence plots in `PostProcessing.m`.
 
 ### Simulation Workflow
 
