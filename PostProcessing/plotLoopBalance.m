@@ -1,15 +1,6 @@
 function plotLoopBalance(N, R_flow, mdot0, mdot_R, dp_tube, u0, options)
 % 环路性能对比：压降平衡验证
 % 仅在存在环路 (N 非空) 时有输出
-%
-% 输入：
-%   N        - 零空间基向量 (Tube_num × n_loops)
-%   R_flow   - 各管流阻 (Tube_num×1)
-%   mdot0    - 最小范数流量解 (Tube_num×1)
-%   mdot_R   - 当前流量分配 (Tube_num×1)
-%   dp_tube  - 各管压降 (Tube_num×1)
-%   u0       - 自由变量初值
-%   options  - fsolve 选项
 
 if isempty(N)
     disp('无环路，跳过环路性能对比。');
@@ -20,7 +11,7 @@ n_loops = size(N, 2);
 
 figure('Name', '环路性能对比', 'NumberTitle', 'off');
 
-% ---- 子图1: 各环路压降平衡 ----
+% ---- 子图1: 各环路两支路压降对比 ----
 subplot(1, 2, 1);
 dp_loop_pos = zeros(1, n_loops);
 dp_loop_neg = zeros(1, n_loops);
@@ -47,38 +38,25 @@ grid on;
 % 标注不平衡量
 for i = 1:n_loops
     imbalance = abs(dp_loop_pos(i) - dp_loop_neg(i)) * 1e6;
-    y_max = max(bar_data(i, :)) * 1e6;  % bar 高度为 Pa
+    y_max = max(bar_data(i, :)) * 1e6;
     dy = diff(ylim);
     text(i, y_max + dy * 0.05, ...
-        sprintf('Δ=%.2fPa', imbalance), ...
+        sprintf('Delta=%.2fPa', imbalance), ...
         'HorizontalAlignment', 'center', 'FontSize', 8);
 end
 
-% ---- 子图2: 自由变量收敛轨迹 ----
+% ---- 子图2: 各环路压降不平衡量 ----
 subplot(1, 2, 2);
-if ~isempty(u0)
-    u0_norm = u0 / (norm(u0) + eps);
-    u_scan = linspace(-2, 2, 50) * norm(u0);
-    F_scan = zeros(n_loops, length(u_scan));
-    for j = 1:length(u_scan)
-        F_scan(:, j) = uF_demo(u_scan(j) * u0_norm, R_flow, N, mdot0);
-    end
-    for i = 1:n_loops
-        plot(u_scan, F_scan(i, :), 'LineWidth', 1.5);
-        hold on;
-    end
-    xline(0, 'k--', 'LineWidth', 1);
-    yline(0, 'k--', 'LineWidth', 1);
-    xlabel('自由变量 u'); ylabel('环路压降残差 F(u)');
-    title('环路残差函数');
-    legend(cellstr(num2str((1:n_loops)', '环路 %d')), 'Location', 'best');
-    grid on;
+imbalance = abs(dp_loop_pos - dp_loop_neg) * 1e6;  % Pa
+b2 = bar(1:n_loops, imbalance, 0.5, 'FaceColor', [0.95 0.6 0.2]);
+xlabel('环路'); ylabel('压降不平衡量 (Pa)');
+title('各环路压降不平衡量 (越小越平衡)');
+set(gca, 'XTickLabel', loop_names);
+grid on;
+for i = 1:n_loops
+    text(i, imbalance(i) + max(imbalance)*0.05, sprintf('%.2f', imbalance(i)), ...
+        'HorizontalAlignment', 'center', 'FontSize', 9, 'FontWeight', 'bold');
 end
 
 sgtitle(sprintf('环路性能分析 (%d个环路)', n_loops));
-end
-
-function F = uF_demo(u_vec, R_flow, N, mdot0)
-    dp_t = (R_flow) .* (mdot0 + N * u_vec).^2;
-    F = (dp_t') * N;
 end
