@@ -9,7 +9,7 @@ addpath(fullfile(fileparts(mfilename('fullpath')), 'PostProcessing'));
 
 %% 2. 沿线物性分布曲线
 plotAlongPath(heatPaths, h_R_in, h_R_out, p_R_in, p_R_out, ...
-    T_MA_in, T_MA_out, dp_tube, mdot_R, Prop_handle, row);
+    T_MA_in, T_MA_out, dp_tube, mdot_R, Prop_handle, row, TCinf, predecessors_in);
 
 %% 3. 环路性能对比（有环路时生效）
 plotLoopBalance(N, R_flow, mdot0, mdot_R, dp_tube, u0, options);

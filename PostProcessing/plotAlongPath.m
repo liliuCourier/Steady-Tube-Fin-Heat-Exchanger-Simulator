@@ -1,5 +1,5 @@
 function plotAlongPath(heatPaths, h_R_in, h_R_out, p_R_in, p_R_out, ...
-    T_MA_in, T_MA_out, dp_tube, mdot_R, Prop_handle, row)
+    T_MA_in, T_MA_out, dp_tube, mdot_R, Prop_handle, row, TCinf, predecessors_in)
 % 沿广度优先路径绘制关键物性分布曲线
 
 Tube_num = length(heatPaths);
@@ -70,14 +70,29 @@ xticklabels(cellstr(num2str(path_order')));
 grid on;
 
 % ---- 子图4: 压降累积曲线 ----
+% 从出口沿前驱关系回溯一条路径，避免并联支路重复累加
+outlet_start = TCinf.outlet_num(1);
+inlet_target = TCinf.inlet_num(1);
+path_tubes = outlet_start;
+curr = outlet_start;
+while ~ismember(curr, TCinf.inlet_num)
+    prev = predecessors_in{curr};
+    if isempty(prev)
+        break;
+    end
+    curr = prev(1);  % 取第一条前驱边
+    path_tubes = [curr, path_tubes];
+end
+dp_path = dp_tube(path_tubes) * 1e6;  % Pa
+dp_cum = cumsum(dp_path);
+
 subplot(2, 2, 4);
-dp_cum = cumsum(dp_tube(path_order)) * 1e6;  % Pa (dp_tube 为 MPa)
-plot(1:Tube_num, dp_cum, 'k-o', 'LineWidth', 2, 'MarkerSize', 8, ...
+plot(1:length(path_tubes), dp_cum, 'k-o', 'LineWidth', 2, 'MarkerSize', 8, ...
     'MarkerFaceColor', 'k');
-xlabel('管序 (BFS)'); ylabel('累积压降 (Pa)');
-title(sprintf('压降累积曲线 (总计: %.1f Pa)', dp_cum(end)));
-xticks(1:Tube_num);
-xticklabels(cellstr(num2str(path_order')));
+xlabel('沿程管序 (出口→进口回溯)'); ylabel('累积压降 (Pa)');
+title(sprintf('压降累积曲线 (%d管路径, 总计: %.1f Pa)', length(path_tubes), dp_cum(end)));
+xticks(1:length(path_tubes));
+xticklabels(cellstr(num2str(path_tubes')));
 grid on;
 
 sgtitle(sprintf('沿线物性分布 (%d管, %d排)', Tube_num, row));
