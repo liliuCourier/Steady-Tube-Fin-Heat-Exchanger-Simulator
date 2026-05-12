@@ -43,7 +43,10 @@ tubeY = Y(:)';
 %% 创建图形界面
 fig = figure('Name', 'Tube Connection Designer', 'NumberTitle', 'off', ...
              'Position', [100 100 1000 650], 'MenuBar', 'none', ...
-             'Tag', 'HX_Path_Planner1_Fig');
+             'Tag', 'HX_Path_Planner1_Fig', ...
+             'CloseRequestFcn', @(~,~) set(gcf, 'Visible', 'off'));
+% 点击关闭按钮时隐藏窗口而非销毁，保持 hxDesigner 句柄有效
+% 如需真正退出，在命令行执行: delete(hxDesigner)
 % 持久化句柄到工作区
 assignin('base', 'hxDesigner', fig);
 
@@ -944,8 +947,8 @@ end
 
 function cbRestart(hObject, ~)
 handles = guidata(hObject);
-close(handles.fig);
-evalin('base', 'tubeConnectionDesigner_final_robust');
+delete(handles.fig);  % 强制销毁（因 CloseRequestFcn 已改为隐藏）
+evalin('base', 'HX_Path_Planner1');
 end
 
 function figClick(hObject, ~)

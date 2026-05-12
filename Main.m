@@ -168,9 +168,14 @@ for i1 = 1:loopmax
 end
 time = toc;
 
-% 自动弹回流路设计窗口（若存在）
-if evalin('base', 'exist(''hxDesigner'',''var'')')
-    figure(evalin('base', 'hxDesigner'));
+% 自动弹回流路设计窗口（若存在且有效）
+try
+    hxFig = evalin('base', 'hxDesigner');
+    if ishandle(hxFig) && isvalid(hxFig)
+        set(hxFig, 'Visible', 'on');
+        figure(hxFig);
+    end
+catch
 end
 
 %%
