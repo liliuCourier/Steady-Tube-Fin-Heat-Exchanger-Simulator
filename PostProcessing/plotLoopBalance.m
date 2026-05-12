@@ -47,8 +47,9 @@ grid on;
 % 标注不平衡量
 for i = 1:n_loops
     imbalance = abs(dp_loop_pos(i) - dp_loop_neg(i)) * 1e6;
-    y_max = max(bar_data(i, :));
-    text(i, y_max + range(ylim)*0.05, ...
+    y_max = max(bar_data(i, :)) * 1e6;  % bar 高度为 Pa
+    dy = diff(ylim);
+    text(i, y_max + dy * 0.05, ...
         sprintf('Δ=%.2fPa', imbalance), ...
         'HorizontalAlignment', 'center', 'FontSize', 8);
 end
