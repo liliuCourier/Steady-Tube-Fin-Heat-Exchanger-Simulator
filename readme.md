@@ -57,12 +57,22 @@
 
 7. **`PostProcessing.m`** — 一键集成入口，自动调用上述全部模块
 
+8. **`HX_Path_Planner1.m`** — 流路设计窗口持久化与增量导出
+   - Figure 添加唯一 `Tag` + 句柄持久化到 `hxDesigner`，随时 `figure(hxDesigner)` 唤出
+   - 点击关闭按钮隐藏窗口而非销毁，设计会话不丢失
+   - 设计变更后标题栏显示 `[已修改，未导出]`，导出后自动清除
+   - 导出时对比上次 `TCinf`，输出拓扑/进出口变化摘要
+   - 左侧添加绿色箭头 + `AIR` 标注指示进风方向
+   - `Main.m` 求解完成后自动弹回设计窗口
+
 ### 仿真流程
 
-1. 在仿真时先打开 `HX_Path_Planner1.m` 进行简单的流路设计。**不建议**在导出流路信息 `TCinf` 后就关闭界面，保持界面以实现实时修改流路。
-2. 在 `GenerateGeo.m` 中进行具体的管道、翅片设计。设计完后不用运行，`Main.m` 求解程序会运行获取信息。
-3. 在 `Main.m` 主程序中开始仿真。
-4. 在 `PostProcessing.m` 中使用 MATLAB 进行后处理。
+1. 运行 `HX_Path_Planner1` 打开设计窗口，设置进出口、绘制 U 型弯连线，点击"导出结果"。
+2. 窗口可最小化或关闭（自动隐藏），句柄 `hxDesigner` 始终有效。
+3. 在 `GenerateGeo.m` 中进行具体的管道、翅片设计。设计完后不用运行，`Main.m` 求解程序会运行获取信息。
+4. 运行 `Main` 开始仿真，求解完成后自动弹回设计窗口。
+5. 如需修改流路，直接在弹回的设计窗口中调整，再次导出（控制台显示变更摘要），重新运行 `Main`。
+6. 运行 `PostProcessing` 进行后处理可视化与数据导出。
 
 ### 求解器
 
@@ -174,12 +184,22 @@ Completed a six-layer post-processing suite providing full visualization and dat
 
 7. **`PostProcessing.m`** — One-click entry point that calls all modules above
 
+8. **`HX_Path_Planner1.m`** — Persistent design window + incremental export
+   - Unique `Tag` + handle persisted as `hxDesigner` in workspace; call `figure(hxDesigner)` anytime
+   - Close button hides the window instead of destroying it; design session survives
+   - Title bar shows `[已修改，未导出]` when circuit is modified, cleared on export
+   - Incremental export: compares with last `TCinf`, prints diff summary (topology, inlets, outlets)
+   - Green arrow + `AIR` label on the left side indicates air inlet direction
+   - `Main.m` automatically brings the design window back after solving
+
 ### Simulation Workflow
 
-1. Run `HX_Path_Planner1.m` first to perform simple circuit design. **It is not recommended** to close the interface after exporting the circuit info `TCinf` – keep it open to enable real-time circuit modification.
-2. In `GenerateGeo`, design the specific tube and fin geometry. No need to run it after design; the `Main` solver will obtain the information.
-3. Start the simulation in the `Main` program.
-4. Use `PostProcessing` in MATLAB for post-processing.
+1. Run `HX_Path_Planner1` to open the design window. Set inlets/outlets, draw U-bend connections, click "Export".
+2. The window can be minimized or "closed" (auto-hidden); handle `hxDesigner` stays valid.
+3. Design tube and fin geometry in `GenerateGeo`. No need to run it; `Main` calls it automatically.
+4. Run `Main` to start simulation. The design window pops back up automatically after solving.
+5. To iterate, modify the circuit in the returned design window, re-export (console shows change summary), re-run `Main`.
+6. Run `PostProcessing` for visualization and data export.
 
 ### Solver
 
