@@ -5,19 +5,43 @@ con_num =  TCinf.con_num;
 row = TCinf.row;
 col = TCinf.col;
 
-%GeoConditionStrcut;
-L       = 0.5;
-D_inner = 9e-3;
-r       = 1e-6;
-D_outer = 10e-3;
+% ==================== 几何参数设置对话框 ====================
+% 自动计算翅片默认值
+default_L_fin = (row+0.5)*20e-3;
+default_H_fin = col*20e-3;
+
+prompt = {'管长 L (m):', ...
+          '管内径 D_inner (m):', ...
+          '管外径 D_outer (m):', ...
+          '管内壁粗糙度 r (m):', ...
+          '排间距 P_row (m):', ...
+          '列间距 P_col (m):', ...
+          '翅片厚度 dx_fin (m):', ...
+          '翅片间距 Fin_pitch (m):'};
+dlgtitle = sprintf('几何参数设置 (%d排×%d列, %d管)', row, col, Tube_num);
+dims = [1 50];
+definput = {'0.5', '0.009', '0.01', '1e-6', '0.02', '0.02', '0.0001', '0.002'};
+answer = inputdlg(prompt, dlgtitle, dims, definput);
+
+if isempty(answer)
+    error('用户取消了几何参数设置');
+end
+
+L         = str2double(answer{1});
+D_inner   = str2double(answer{2});
+D_outer   = str2double(answer{3});
+r         = str2double(answer{4});
+P_row     = str2double(answer{5});
+P_col     = str2double(answer{6});
+dx_fin    = str2double(answer{7});
+Fin_pitch = str2double(answer{8});
+
+if any(isnan([L, D_inner, D_outer, r, P_row, P_col, dx_fin, Fin_pitch]))
+    error('几何参数输入无效，所有值必须为数字');
+end
+% ========================================================
+
 dx_tube = (D_outer - D_inner)/2;    % 管壁厚度
-
-P_row = 20e-3;          % row管间距
-P_col = 20e-3;          % col管间距
-
-% 翅片信息
-dx_fin      = 0.1e-3;               % 翅片厚度
-Fin_pitch   = 2e-3;                 % 翅片间距
 
 Fin_pitch_net = Fin_pitch - dx_fin; % 翅片净间距
 L_fin = (row+0.5)*P_row;

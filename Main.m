@@ -1,12 +1,20 @@
-% 主求解器
+% 主求解器 — 运行前请先执行 PreProcessing 完成流路/几何/边界设置
 %%
 if ~exist('Prop_handle','var')
     refprop_location = 'E:\refprop10\REFPROP';
     R = 'R134a';
-    %示例：
-    % p-Mpa\h-kJ/kg
-    % Prop_handle = Prop_load(refprop_location,R,pmin,pmax,hmin,hmax,p_point,u_vap_point,u_liq_point);
     Prop_handle = Prop_load(refprop_location,R,1e-3,5.5,80,510,100,25,25);
+end
+
+% 检查预处理数据是否就绪
+if ~exist('TCinf','var')
+    error('TCinf 未找到，请先运行 PreProcessing');
+end
+if ~exist('GeoCondition','var')
+    error('GeoCondition 未找到，请先运行 PreProcessing');
+end
+if ~exist('BDCondition','var')
+    error('BDCondition 未找到，请先运行 PreProcessing');
 end
 
 options = optimoptions('fsolve','Display','none',...
@@ -17,13 +25,7 @@ options = optimoptions('fsolve','Display','none',...
     'UseParallel',false,...
     'ScaleProblem','jacobian');
 
-% % 唤起管路连接程序,建议不要关
-% HX_Path_Planner1()
-
-%% 在没有修改管路时，这些不需要重复加载
-% 根据管路连接信息生成几何信息
-[GeoCondition] = GenerateGeo(TCinf);
-[BDCondition] = GenerateBD(GeoCondition,Prop_handle);
+%% 初始化求解
 
 [N,u0,mdot0,mdot_R_init,exitflag] = mdot_Initial(BDCondition,GeoCondition,TCinf);
 
@@ -168,14 +170,13 @@ for i1 = 1:loopmax
 end
 time = toc;
 
-% 自动弹回流路设计窗口（若存在且有效）
+fprintf('求解完成，耗时 %.2f s，正在运行后处理...\n', time);
+
+% 自动运行后处理
 try
-    hxFig = evalin('base', 'hxDesigner');
-    if ishandle(hxFig) && isvalid(hxFig)
-        set(hxFig, 'Visible', 'on');
-        figure(hxFig);
-    end
-catch
+    PostProcessing;
+catch ME
+    fprintf('后处理运行出错: %s\n', ME.message);
 end
 
 %%
