@@ -15,10 +15,10 @@ for idx = 1:Tube_num
     t = path_order(idx);
     % 工质出口温度（用出口焓和出口压力反推）
     h_out = h_R_out(end, t);
-    p_out = p_R_out(end, t) / 1e6;  % Pa -> MPa
+    p_out = p_R_out(end, t);  
     [~, ~, ~, T_R_out(idx)] = Prop1(p_out, h_out, Prop_handle);
     % 平均压力
-    p_R_mid(idx) = (p_R_in(1, t) + p_R_out(end, t)) / 1e6;
+    p_R_mid(idx) = (p_R_in(1, t) + p_R_out(end, t)) / 2;
     % 单管换热量
     q_tube(idx) = abs((h_R_in(1, t) - h_R_out(end, t)) * mdot_R(t) * 1000);  % W
     % 空气平均温度
@@ -71,7 +71,7 @@ grid on;
 
 % ---- 子图4: 压降累积曲线 ----
 subplot(2, 2, 4);
-dp_cum = cumsum(dp_tube(path_order)) * 1e6;  % Pa
+dp_cum = cumsum(dp_tube(path_order)) * 1e6;  % Pa (dp_tube 为 MPa)
 plot(1:Tube_num, dp_cum, 'k-o', 'LineWidth', 2, 'MarkerSize', 8, ...
     'MarkerFaceColor', 'k');
 xlabel('管序 (BFS)'); ylabel('累积压降 (Pa)');

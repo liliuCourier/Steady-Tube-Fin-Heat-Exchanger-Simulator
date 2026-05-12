@@ -63,7 +63,7 @@ end
 T_R_out = zeros(1, Tube_num);
 x_R_out = zeros(1, Tube_num);
 for t = 1:Tube_num
-    [~, ~, ~, T_R_out(t), x_R_out(t)] = Prop1(p_R_out(end,t)/1e6, h_R_out(end,t), Prop_handle);
+    [~, ~, ~, T_R_out(t), x_R_out(t)] = Prop1(p_R_out(end,t), h_R_out(end,t), Prop_handle);  % p in MPa
 end
 
 hxPerf.Performance = struct();

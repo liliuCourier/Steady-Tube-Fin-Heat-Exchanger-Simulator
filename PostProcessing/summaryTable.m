@@ -19,7 +19,7 @@ heatload_total = sum(heatload_tube);
 
 % ---- 压降计算 ----
 dp_total = (max(p_R_in(1,:)) - min(p_R_out(end,:))) * 1e6;  % Pa
-dp_tube_total = sum(dp_tube) * 1e6;  % Pa (各管压降之和)
+dp_tube_total = sum(dp_tube) * 1e6;  % Pa (dp_tube 为 MPa)
 
 % ---- 流量分配 ----
 mdot_total = sum(mdot_R);
@@ -32,7 +32,7 @@ T_MA_out_avg = mean(T_MA_out(end, :));
 % 各管出口温度
 T_R_out = zeros(1, Tube_num);
 for t = 1:Tube_num
-    [~, ~, ~, T_R_out(t)] = Prop1(p_R_out(end,t)/1e6, h_R_out(end,t), Prop_handle);
+    [~, ~, ~, T_R_out(t)] = Prop1(p_R_out(end,t), h_R_out(end,t), Prop_handle);  % p in MPa
 end
 
 % 最小传热温差 (pinch point)
