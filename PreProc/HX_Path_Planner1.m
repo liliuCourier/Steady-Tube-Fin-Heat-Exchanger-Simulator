@@ -621,7 +621,7 @@ for t = 1:handles.nTubes
             handles.tubeInletSide(t) = 2;
             handles.tubeOutletSide(t) = 1;
         end
-    elseif ismember(tcbIn, handles.selectedOutlets)
+    elseif ismember(t, handles.selectedOutlets)
         handles.tubeInletSide(t) = 0;
         handles.tubeOutletSide(t) = 0;
     else
