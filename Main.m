@@ -76,6 +76,7 @@ p_MA_out    = p_MA_inlet*ones(CV_num,Tube_num);
 mdot_MA     = mdot_MA_inlet/row/CV_num*ones(CV_num,Tube_num);
 
 dp_tube = zeros(Tube_num,1);
+R_flow = [];  % 初始化（无环路时保持为空）
 %dp_Uband = zeros(Tube_num,1);
 
 % 求解
