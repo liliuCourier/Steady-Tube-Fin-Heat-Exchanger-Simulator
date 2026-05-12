@@ -5,7 +5,7 @@
 addpath(fullfile(fileparts(mfilename('fullpath')), 'PostProcessing'));
 
 %% 1. 流路拓扑可视化
-%plotTubeLayout(TCinf, GeoCondition);
+plotTubeLayout(TCinf, GeoCondition);
 
 %% 2. 沿线物性分布曲线
 plotAlongPath(heatPaths, h_R_in, h_R_out, p_R_in, p_R_out, ...

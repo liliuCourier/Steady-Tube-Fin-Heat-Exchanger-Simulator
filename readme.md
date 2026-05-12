@@ -70,7 +70,7 @@
 1. 运行 `HX_Path_Planner1` 打开设计窗口，设置进出口、绘制 U 型弯连线，点击"导出结果"。
 2. 窗口可最小化或关闭（自动隐藏），句柄 `hxDesigner` 始终有效。
 3. 在 `GenerateGeo.m` 中进行具体的管道、翅片设计。设计完后不用运行，`Main.m` 求解程序会运行获取信息。
-4. 运行 `Main` 开始仿真，求解完成后自动弹回设计窗口。
+4. 运行 `Main` 开始仿真，首先弹出边界条件设置对话框（工质/空气的进口参数），确认后开始求解，完成后自动弹回设计窗口。
 5. 如需修改流路，直接在弹回的设计窗口中调整，再次导出（控制台显示变更摘要），重新运行 `Main`。
 6. 运行 `PostProcessing` 进行后处理可视化与数据导出。
 
@@ -197,7 +197,7 @@ Completed a six-layer post-processing suite providing full visualization and dat
 1. Run `HX_Path_Planner1` to open the design window. Set inlets/outlets, draw U-bend connections, click "Export".
 2. The window can be minimized or "closed" (auto-hidden); handle `hxDesigner` stays valid.
 3. Design tube and fin geometry in `GenerateGeo`. No need to run it; `Main` calls it automatically.
-4. Run `Main` to start simulation. The design window pops back up automatically after solving.
+4. Run `Main` to start simulation. A boundary condition dialog pops up first (refrigerant/air inlet parameters). After confirmation, solving begins. The design window returns automatically after completion.
 5. To iterate, modify the circuit in the returned design window, re-export (console shows change summary), re-run `Main`.
 6. Run `PostProcessing` for visualization and data export.
 

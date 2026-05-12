@@ -6,21 +6,40 @@ L_fin    = GeoCondition.L_fin;
 Area_air = L*L_fin;
 Ra       = 287.047;
 
-% R
-h_R_inlet       = 450;    % kJ/kg   Inlet enthalpy          进口焓
-mdot_R_inlet    = 20e-3;  % kg/s    Inlet mass flow rate    进口总质量流量
-p_R_inlet       = 1;      % MPa     Inlet Pressure          进口压力
+% ==================== 边界条件设置对话框 ====================
+prompt = {'工质进口焓 h_R_inlet (kJ/kg):', ...
+          '工质进口质量流量 mdot_R_inlet (kg/s):', ...
+          '工质进口压力 p_R_inlet (MPa):', ...
+          '空气进口温度 T_MA_inlet (K):', ...
+          '空气进口压力 p_MA_inlet (MPa):', ...
+          '空气进口风速 velocity_MA_in (m/s):', ...
+          '空气进口相对湿度 RH_MA_inlet (0~1):'};
+dlgtitle = '边界条件设置';
+dims = [1 50];
+definput = {'450', '0.02', '1', '300', '0.101325', '10', '0.5'};
+answer = inputdlg(prompt, dlgtitle, dims, definput);
 
-% MA
-T_MA_inlet      = 300;          % K    Inlet MA Temperature 进口温度
-p_MA_inlet      = 0.101325;     % MPa  Inlet MA pressure    进口MA压力
+if isempty(answer)
+    error('用户取消了边界条件设置');
+end
 
-velocity_MA_in  = 10;                                        % m/s     Inlet MA velocity MA进口速度,推荐使用速度
-Density_MA      = p_MA_inlet*1e6/Ra/T_MA_inlet;             % kg/m^3  Inlet MA Density  MA进口密度，使用理想气体方程计算
+h_R_inlet       = str2double(answer{1});    % kJ/kg   Inlet enthalpy
+mdot_R_inlet    = str2double(answer{2});    % kg/s    Inlet mass flow rate
+p_R_inlet       = str2double(answer{3});    % MPa     Inlet Pressure
 
-mdot_MA_inlet   = Density_MA*Area_air*velocity_MA_in;       % kg/s    Inlet MA Mass flow rate  换算的MA进口总质量流量，
-RH_MA_inlet     = 0.5;                                      % 1       Relative Humidity        MA进口的相对湿度
-x_MA_inlet      = RHTox(RH_MA_inlet,T_MA_inlet,p_MA_inlet*1e6,Prop_handle);      % 函数要求输入的压力单位为Pa
+T_MA_inlet      = str2double(answer{4});    % K       Inlet MA Temperature
+p_MA_inlet      = str2double(answer{5});    % MPa     Inlet MA pressure
+velocity_MA_in  = str2double(answer{6});    % m/s     Inlet MA velocity
+RH_MA_inlet     = str2double(answer{7});    % 1       Relative Humidity
+
+if any(isnan([h_R_inlet, mdot_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, velocity_MA_in, RH_MA_inlet]))
+    error('边界条件输入无效，所有值必须为数字');
+end
+% ========================================================
+
+Density_MA      = p_MA_inlet*1e6/Ra/T_MA_inlet;             % kg/m^3  MA密度
+mdot_MA_inlet   = Density_MA*Area_air*velocity_MA_in;       % kg/s    MA质量流量
+x_MA_inlet      = RHTox(RH_MA_inlet,T_MA_inlet,p_MA_inlet*1e6,Prop_handle);
 
 % packaging Boundary structure  组装边界条件结构体
 BD_MA = struct( ...
