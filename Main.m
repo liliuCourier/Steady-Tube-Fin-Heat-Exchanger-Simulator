@@ -170,6 +170,9 @@ for i1 = 1:loopmax
 end
 time = toc;
 
+% 导出最终收敛指标
+dp_loop_max = dp_loop_history(i1);
+
 fprintf('求解完成，耗时 %.2f s，正在运行后处理...\n', time);
 
 % 自动运行后处理
