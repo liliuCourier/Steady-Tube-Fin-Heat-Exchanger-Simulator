@@ -905,7 +905,11 @@ assignin('base', 'TCinf', TCinf);
 last = handles.lastExport;
 if ~isempty(last.TC_matrix)
     fprintf('=== 导出结果 (增量对比) ===\n');
-    if isequal(TC_matrix, last.TC_matrix)
+    if ~isequal(size(TC_matrix), size(last.TC_matrix))
+        fprintf('  流路尺寸变化: %dx%d -> %dx%d (重新设计)\n', ...
+            size(last.TC_matrix,1), size(last.TC_matrix,2), ...
+            size(TC_matrix,1), size(TC_matrix,2));
+    elseif isequal(TC_matrix, last.TC_matrix)
         fprintf('  流路拓扑: 无变化\n');
     else
         diff_mat = TC_matrix - last.TC_matrix;
