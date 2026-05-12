@@ -42,7 +42,10 @@ tubeY = Y(:)';
 
 %% 创建图形界面
 fig = figure('Name', 'Tube Connection Designer', 'NumberTitle', 'off', ...
-             'Position', [100 100 1000 650], 'MenuBar', 'none');
+             'Position', [100 100 1000 650], 'MenuBar', 'none', ...
+             'Tag', 'HX_Path_Planner1_Fig');
+% 持久化句柄到工作区
+assignin('base', 'hxDesigner', fig);
 
 % 左侧面板
 leftPanel = uipanel('Parent', fig, 'Position', [0.02 0.15 0.18 0.75], 'Title', '状态');
@@ -195,6 +198,8 @@ handles.row = rows;
 handles.col = cols;
 
 handles.connectFirstTube = [];
+handles.dirty = false;      % 修改提醒标记
+handles.lastExport = struct('TC_matrix', [], 'inlets', [], 'outlets', [], 'connections', []);
 
 guidata(fig, handles);
 
@@ -273,6 +278,12 @@ end
 guidata(handles.fig, handles);
 end
 
+function setDirty(handles)
+    handles.dirty = true;
+    set(handles.fig, 'Name', 'Tube Connection Designer [已修改，未导出]');
+    guidata(handles.fig, handles);
+end
+
 function cbInletDir(hObject, ~)
 handles = guidata(hObject);
 newDir = get(hObject, 'Value');
@@ -307,6 +318,7 @@ end
 drawAllConnections(handles);
 updateDisplay(handles);
 guidata(hObject, handles);
+setDirty(handles);
 end
 
 function drawAllConnections(handles)
@@ -440,6 +452,8 @@ end
 recomputeSides(handles);
 drawAllConnections(handles);
 updateDisplay(handles);
+handles = guidata(handles.fig);
+setDirty(handles);
 end
 
 function cbInlet(hObject, ~)
@@ -616,6 +630,8 @@ handles.connectFirstTube = [];
 set(handles.txtStatus, 'String', '所有连线已清除');
 guidata(hObject, handles);
 updateDisplay(handles);
+handles = guidata(hObject);
+setDirty(handles);
 end
 
 function cbClear(hObject, ~)
@@ -639,6 +655,8 @@ set(handles.btnClear, 'Enable', 'on');
 set(handles.txtStatus, 'String', '已清除所有进出口和连线');
 guidata(hObject, handles);
 updateDisplay(handles);
+handles = guidata(hObject);
+setDirty(handles);
 end
 
 function cbExport(hObject, ~)
@@ -880,11 +898,47 @@ TCinf.IO_outlet        = IO_outlet;
 
 assignin('base', 'TCinf', TCinf);
 
-disp('=== 导出结果 ===');
-disp('节点-管道关联矩阵(含虚拟节点):'); disp(M_internal);
-disp('管流向 (0=前→后, 1=后→前):'); disp(tubeFlowDir);
+% 增量导出对比
+last = handles.lastExport;
+if ~isempty(last.TC_matrix)
+    fprintf('=== 导出结果 (增量对比) ===\n');
+    if isequal(TC_matrix, last.TC_matrix)
+        fprintf('  流路拓扑: 无变化\n');
+    else
+        diff_mat = TC_matrix - last.TC_matrix;
+        [r_chg, c_chg] = find(diff_mat ~= 0);
+        fprintf('  流路拓扑变化: %d 处\n', length(r_chg));
+        for k = 1:length(r_chg)
+            fprintf('    管 %d: %+d (节点 %d)\n', c_chg(k), diff_mat(r_chg(k), c_chg(k)), r_chg(k));
+        end
+    end
+    if ~isequal(inlets, last.inlets)
+        fprintf('  进口管: %s -> %s\n', mat2str(last.inlets), mat2str(inlets));
+    else
+        fprintf('  进口管: 无变化 (%s)\n', mat2str(inlets));
+    end
+    if ~isequal(outlets, last.outlets)
+        fprintf('  出口管: %s -> %s\n', mat2str(last.outlets), mat2str(outlets));
+    else
+        fprintf('  出口管: 无变化 (%s)\n', mat2str(outlets));
+    end
+else
+    fprintf('=== 导出结果 (首次) ===\n');
+    fprintf('  进口管: %s  出口管: %s  连线数: %d\n', ...
+        mat2str(inlets), mat2str(outlets), length(edges));
+end
 
-set(handles.txtStatus, 'String', '导出成功：矩阵与流向信息已保存至 TCinf');
+% 保存本次导出供下次对比
+handles.lastExport.TC_matrix   = TC_matrix;
+handles.lastExport.inlets      = inlets;
+handles.lastExport.outlets     = outlets;
+handles.lastExport.connections = edges;
+
+% 清除修改标记
+handles.dirty = false;
+set(handles.fig, 'Name', 'Tube Connection Designer');
+
+set(handles.txtStatus, 'String', '导出成功：TCinf 已更新');
 guidata(hObject, handles);
 end
 
@@ -1083,6 +1137,7 @@ end
 guidata(hObject, handles);
 updateDisplay(handles);
 drawAllConnections(handles);
+setDirty(handles);
 end
 
 function figMove(src, ~)

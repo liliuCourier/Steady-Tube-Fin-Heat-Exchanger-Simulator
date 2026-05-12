@@ -168,6 +168,11 @@ for i1 = 1:loopmax
 end
 time = toc;
 
+% 自动弹回流路设计窗口（若存在）
+if evalin('base', 'exist(''hxDesigner'',''var'')')
+    figure(evalin('base', 'hxDesigner'));
+end
+
 %%
 function F = uF(u,R_flow,N,mdot0)
  dp_tube = (R_flow).*(mdot0 + N*u).^2;
