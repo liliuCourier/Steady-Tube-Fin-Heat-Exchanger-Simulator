@@ -100,6 +100,20 @@ for i = 1:nTubes
     text(tubeX(i)+0.1, tubeY(i)-0.1, num2str(i), 'FontSize', 10, 'Color', 'k', 'Tag', 'tubeLabel');
 end
 
+% 空气流动方向指示（左侧进风）
+air_arrow_x = 0.2;                          % 箭头起点 x（管束左侧）
+air_label_x = 0.05;                         % 文字 x
+for i = 1:2:rows
+    quiver(air_arrow_x, i, 0.4, 0, 0, ...
+        'MaxHeadSize', 0.5, 'Color', [0.2 0.7 0.2], 'LineWidth', 2, ...
+        'AutoScale', 'off', 'Tag', 'airArrow');
+end
+text(air_label_x, rows/2 + 0.5, 'AIR', ...
+    'FontSize', 11, 'FontWeight', 'bold', 'Color', [0.2 0.7 0.2], ...
+    'HorizontalAlignment', 'center', 'Tag', 'airLabel');
+% 扩大 xlim 以容纳空气箭头
+xlim([-0.3, cols+0.5]);
+
 title(sprintf('%dBanks × %dTubes（共%d根管）',cols, rows, nTubes));
 
 bottom_location.xmin = 0.27;
