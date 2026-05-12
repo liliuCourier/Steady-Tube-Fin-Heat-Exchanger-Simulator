@@ -4,21 +4,18 @@
 % 添加后处理函数路径
 addpath(fullfile(fileparts(mfilename('fullpath')), 'PostProcessing'));
 
-%% 1. 流路拓扑可视化
-plotTubeLayout(TCinf, GeoCondition);
-
-%% 2. 沿线物性分布曲线
+%% 1. 沿线物性分布曲线
 plotAlongPath(heatPaths, h_R_in, h_R_out, p_R_in, p_R_out, ...
     T_MA_in, T_MA_out, dp_tube, mdot_R, Prop_handle, row, TCinf, predecessors_in);
 
-%% 3. 环路性能对比（有环路时生效）
+%% 2. 环路性能对比（有环路时生效）
 plotLoopBalance(N, R_flow, mdot0, mdot_R, dp_tube, u0, options);
 
-%% 4. 整体性能汇总表
+%% 3. 整体性能汇总表
 summaryTable(TCinf, GeoCondition, BDCondition, h_R_in, h_R_out, ...
     p_R_in, p_R_out, T_MA_in, T_MA_out, mdot_R, dp_tube, heatPaths, time, Prop_handle, N);
 
-%% 5. 收敛历史
+%% 4. 收敛历史
 % 修剪未使用的预分配
 residual_history(i1+1:end) = [];
 dp_loop_history(i1+1:end)   = [];
@@ -45,7 +42,7 @@ end
 
 sgtitle(sprintf('收敛历史 (共 %d 次迭代, %.2f s)', i1, time));
 
-%% 6. 导出标准化性能数据
+%% 5. 导出标准化性能数据
 hxPerf = exportHxPerf(TCinf, GeoCondition, BDCondition, ...
     h_R_in, h_R_out, p_R_in, p_R_out, ...
     T_MA_in, T_MA_out, mdot_R, mdot_MA, dp_tube, ...
