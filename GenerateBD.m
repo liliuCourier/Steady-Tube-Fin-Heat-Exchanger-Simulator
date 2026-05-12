@@ -13,10 +13,11 @@ prompt = {'工质进口焓 h_R_inlet (kJ/kg):', ...
           '空气进口温度 T_MA_inlet (K):', ...
           '空气进口压力 p_MA_inlet (MPa):', ...
           '空气进口风速 velocity_MA_in (m/s):', ...
-          '空气进口相对湿度 RH_MA_inlet (0~1):'};
-dlgtitle = '边界条件设置';
+          '空气进口相对湿度 RH_MA_inlet (0~1):', ...
+          '控制容积数 CV_num (每管离散段数):'};
+dlgtitle = '边界条件与求解设置';
 dims = [1 50];
-definput = {'450', '0.02', '1', '300', '0.101325', '10', '0.5'};
+definput = {'450', '0.02', '1', '300', '0.101325', '10', '0.5', '20'};
 answer = inputdlg(prompt, dlgtitle, dims, definput);
 
 if isempty(answer)
@@ -31,9 +32,13 @@ T_MA_inlet      = str2double(answer{4});    % K       Inlet MA Temperature
 p_MA_inlet      = str2double(answer{5});    % MPa     Inlet MA pressure
 velocity_MA_in  = str2double(answer{6});    % m/s     Inlet MA velocity
 RH_MA_inlet     = str2double(answer{7});    % 1       Relative Humidity
+CV_num          = str2double(answer{8});    % 1       控制容积数
 
-if any(isnan([h_R_inlet, mdot_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, velocity_MA_in, RH_MA_inlet]))
+if any(isnan([h_R_inlet, mdot_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, velocity_MA_in, RH_MA_inlet, CV_num]))
     error('边界条件输入无效，所有值必须为数字');
+end
+if CV_num < 2 || mod(CV_num, 1) ~= 0
+    error('CV_num 必须为 ≥2 的整数');
 end
 % ========================================================
 
@@ -55,7 +60,8 @@ BD_R = struct( ...
 
 BDCondition = struct( ...
     "BD_R"           ,BD_R,...
-    "BD_MA"          ,BD_MA);
+    "BD_MA"          ,BD_MA,...
+    "CV_num"         ,CV_num);
 end
 
 

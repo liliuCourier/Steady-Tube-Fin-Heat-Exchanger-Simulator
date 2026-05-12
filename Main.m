@@ -1,10 +1,10 @@
 % 主求解器 — 运行前请先执行 PreProcessing 完成流路/几何/边界设置
 %%
-if ~exist('Prop_handle','var')
-    refprop_location = 'E:\refprop10\REFPROP';
-    R = 'R134a';
-    Prop_handle = Prop_load(refprop_location,R,1e-3,5.5,80,510,100,25,25);
-end
+% if ~exist('Prop_handle','var')
+%     refprop_location = 'E:\refprop10\REFPROP';
+%     R = 'R134a';
+%     Prop_handle = Prop_load(refprop_location,R,1e-3,5.5,80,510,100,25,25);
+% end
 
 % 检查预处理数据是否就绪
 if ~exist('TCinf','var')
@@ -33,7 +33,7 @@ options = optimoptions('fsolve','Display','none',...
 [heatPaths,pdropPaths,predecessors_in,predecessors_out] = buildPath(TCinf.TC_matrix,N);
 %%
 
-CV_num = 20;
+CV_num = BDCondition.CV_num;
 row = GeoCondition.row;
 Tube_num = GeoCondition.Tube_num;
 %Uband_length = GeoCondition.Uband_length;
