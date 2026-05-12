@@ -8,7 +8,7 @@
 
 第一个适用于管翅式稳态仿真的 MATLAB 程序（工程）。在 Demo1.0 版本中只支持干工况。架构可以自己看，内容不多。
 
-### ### 5/12 Demo1.01
+### 5/12 Demo1.01
 
 基于 Demo1.0，修复了一个重大 bug：在无环路简单流路中，基向量 $N$ 为空，所有管路流量由进口唯一确定，不存在自由变量。此时 `mdot_Initial.m` 中 $u_0 = N \setminus (m_{init} - m_0)$ 会因 $N$ 为空而报错，且 `Main.m` 中 `fsolve` 收到空初值同样报错。
 
@@ -23,14 +23,39 @@
 
 完成后处理六层模块，提供从流路验证到性能汇总的完整可视化与数据导出能力。所有后处理函数统一放置在 `PostProcessing/` 子目录中，`PostProcessing.m` 作为一键集成入口。
 
-**新增模块：**
+**新增模块与生成图像：**
 
-1. `PostProcessing/plotTubeLayout.m` — 流路拓扑可视化：管排网格 + 流向箭头 + 进出口高亮标记。
-2. `PostProcessing/plotAlongPath.m` — 沿线物性分布曲线：温度、压力、换热量、压降累积沿广度优先管序绘制。
-3. `PostProcessing/plotLoopBalance.m` — 环路性能对比：两支路压降平衡验证 + 残差函数曲线，无环路时自动跳过。
-4. `PostProcessing/summaryTable.m` — 整体性能汇总表：总换热量、压降、温差、各管换热量占比等关键指标。
-5. `PostProcessing/exportHxPerf.m` — 标准化 `hxPerf` 结构体导出，供 `fmincon`、遗传算法等优化器直接调用。
-6. `Main.m` — 新增迭代收敛历史日志（`residual_history`、`dp_loop_history`），`PostProcessing.m` 中绘制收敛曲线。
+1. **`PostProcessing/plotTubeLayout.m`** — 流路拓扑可视化
+   - 按实际管排布局（$N_{row} \times N_{col}$）绘制管束网格
+   - 蓝色箭头 = 正向流动，橙色箭头 = 反向流动
+   - 绿色方框标记进口管，红色三角标记出口管
+   - 黑线连接同一节点的管路，直观展示分支/汇合关系
+
+2. **`PostProcessing/plotAlongPath.m`** — 沿线物性分布（2×2 子图面板）
+   - 子图1：工质出口温度 + 空气平均温度沿 BFS 管序变化
+   - 子图2：工质平均压力（左轴）+ 各管压降（右轴柱状图）
+   - 子图3：各管换热量柱状图，标注占比百分比
+   - 子图4：沿程累积压降曲线
+
+3. **`PostProcessing/plotLoopBalance.m`** — 环路性能对比（双图）
+   - 左图：每个环路两支路压降分组柱状图（正向 vs 反向），标注不平衡量
+   - 右图：各环路压降不平衡量柱状图（越矮越平衡）
+   - 无环路时自动跳过
+
+4. **`PostProcessing/summaryTable.m`** — 控制台整体性能汇总表
+   - 基本参数：管排布局、进出口管号、计算耗时
+   - 热力性能：总换热量、进出口温度、最小传热温差
+   - 流动性能：总流量、总压降、各管压降之和、各管流量
+   - 各管换热量占比（含 ASCII 进度条）
+   - 各管出口状态矩阵（焓/压力/温度/压降/换热量）
+
+5. **`PostProcessing/exportHxPerf.m`** — 标准化 `hxPerf` 结构体导出，供 `fmincon`、遗传算法等优化器直接调用
+
+6. **`Main.m`** — 新增迭代收敛历史日志（`residual_history`、`dp_loop_history`），`PostProcessing.m` 绘制双图：
+   - 左图：能量残差随迭代次数的收敛曲线（对数坐标）
+   - 右图：环路压降残差收敛曲线（无环路时显示 N/A）
+
+7. **`PostProcessing.m`** — 一键集成入口，自动调用上述全部模块
 
 ### 仿真流程
 
@@ -115,14 +140,39 @@ Based on Demo1.0, this release fixes a critical bug: in simple circuits without 
 
 Completed a six-layer post-processing suite providing full visualization and data export — from circuit design verification to performance summaries. All post-processing functions reside in the `PostProcessing/` subdirectory, with `PostProcessing.m` as the one-click entry point.
 
-**New modules:**
+**New modules and generated figures:**
 
-1. `PostProcessing/plotTubeLayout.m` — Flow topology visualization: tube grid + flow direction arrows + inlet/outlet highlights.
-2. `PostProcessing/plotAlongPath.m` — Parameter distribution along BFS path: temperature, pressure, heat load, and cumulative pressure drop.
-3. `PostProcessing/plotLoopBalance.m` — Loop balance verification: branch pressure drop comparison + residual function curves; auto-skips when no loops exist.
-4. `PostProcessing/summaryTable.m` — Overall performance summary table: total heat load, pressure drop, temperature differences, per-tube heat load percentages.
-5. `PostProcessing/exportHxPerf.m` — Standardized `hxPerf` struct export for direct use by `fmincon`, genetic algorithms, and other optimizers.
-6. `Main.m` — Added iteration convergence history logging (`residual_history`, `dp_loop_history`), with convergence plots in `PostProcessing.m`.
+1. **`PostProcessing/plotTubeLayout.m`** — Flow topology visualization
+   - Draws tube grid in actual layout ($N_{row} \times N_{col}$)
+   - Blue arrows = forward flow, orange arrows = reverse flow
+   - Green square marks inlet tubes, red triangle marks outlet tubes
+   - Black lines connect tubes sharing a node, showing branching/merging relationships
+
+2. **`PostProcessing/plotAlongPath.m`** — Parameter distribution along BFS path (2×2 subplot panel)
+   - Subplot 1: Refrigerant outlet temperature + air average temperature along path
+   - Subplot 2: Refrigerant average pressure (left axis) + per-tube pressure drop (right axis bar)
+   - Subplot 3: Per-tube heat load bar chart with percentage labels
+   - Subplot 4: Cumulative pressure drop along path
+
+3. **`PostProcessing/plotLoopBalance.m`** — Loop balance verification (dual-panel)
+   - Left: Grouped bar chart of forward vs. reverse branch pressure drop for each loop, with imbalance annotations
+   - Right: Loop pressure imbalance bar chart (shorter = more balanced)
+   - Auto-skips when no loops exist
+
+4. **`PostProcessing/summaryTable.m`** — Console overall performance summary table
+   - Basic parameters: tube layout, inlet/outlet tube numbers, computation time
+   - Thermal performance: total heat load, inlet/outlet temperatures, minimum approach temperature
+   - Flow performance: total mass flow, total pressure drop, per-tube flow rates
+   - Per-tube heat load percentages (with ASCII bar chart)
+   - Per-tube outlet state matrix (enthalpy/pressure/temperature/pressure drop/heat load)
+
+5. **`PostProcessing/exportHxPerf.m`** — Standardized `hxPerf` struct export for direct use by `fmincon`, genetic algorithms, and other optimizers
+
+6. **`Main.m`** — Added iteration convergence history logging (`residual_history`, `dp_loop_history`), with dual-panel plot in `PostProcessing.m`:
+   - Left: Energy residual vs. iteration (log scale)
+   - Right: Loop pressure residual convergence (N/A when no loops)
+
+7. **`PostProcessing.m`** — One-click entry point that calls all modules above
 
 ### Simulation Workflow
 
