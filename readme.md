@@ -96,6 +96,25 @@ Prop_handle = Prop_load(refprop_location, R, 1e-3, 5.5, 80, 510, 100, 25, 25);
 - 若出现 `getFluidProperty` 未定义，请检查 REFPROP 是否正确安装且 MATLAB 路径包含 REFPROP 目录
 - 不同工质（如 R410A）的饱和压力和焓范围差异很大，更换工质时务必调整 `pmin/pmax/hmin/hmax`
 
+#### 附加功能依赖：MATLAB Interface for REFPROP and CoolProp
+
+本程序通过 **MATLAB Interface for REFPROP and CoolProp**（官方 MATLAB 接口）调用 REFPROP，该附加功能**必须**由用户先获取并安装。
+
+**系统要求：**
+
+| 依赖 | 版本要求 | 说明 |
+|------|----------|------|
+| MATLAB | R2020a 或更新（推荐最新版） | 可能兼容更早版本，但不保证 |
+| REFPROP | 10.x | `Refprop.dll` 所在目录需在 MATLAB 路径中 |
+| CoolProp | 6.6.0 | 通常安装在 `C:\Users\<用户名>\AppData\Roaming\CoolProp` |
+| C/C++ 编译器 | 当前 MATLAB 版本支持的编译器 | [编译器支持列表](https://www.mathworks.com/support/requirements/supported-compilers.html) |
+
+**安装步骤：**
+1. 安装 REFPROP 10.x 并确认 `Refprop.dll` 路径
+2. 安装 CoolProp 6.6.0（通常自动安装至 `%APPDATA%\CoolProp`）
+3. 配置 MATLAB 的 C/C++ 编译器：在 MATLAB 中运行 `mex -setup`
+4. 将 MATLAB Interface for REFPROP and CoolProp 添加至 MATLAB 路径
+
 #### 2. 关联式选择
 
 不同的关联式会产生不同的结果。具体的关联式请在 `R_cal_10.m`（工质侧求解器）和 `DryA_cal_10.m`（空气侧求解器）中的"关联式区域"自己设置。
@@ -210,6 +229,25 @@ Prop_handle = Prop_load(refprop_location, R, 1e-3, 5.5, 80, 510, 100, 25, 25);
 - If a tube's pressure/enthalpy exceeds the above ranges during simulation, `Prop1` will error or return invalid values due to extrapolation
 - If `getFluidProperty` is undefined, check that REFPROP is installed and its directory is on the MATLAB path
 - Different fluids (e.g., R410A) have very different saturation pressures and enthalpy ranges — adjust `pmin/pmax/hmin/hmax` accordingly
+
+#### External dependency: MATLAB Interface for REFPROP and CoolProp
+
+This program calls REFPROP through the **MATLAB Interface for REFPROP and CoolProp** (official MATLAB wrapper). This add-on **must** be obtained and installed by the user before running.
+
+**System requirements:**
+
+| Dependency | Version | Notes |
+|------------|---------|-------|
+| MATLAB | R2020a or later (latest recommended) | May work on older versions, not guaranteed |
+| REFPROP | 10.x | Directory containing `Refprop.dll` must be on MATLAB path |
+| CoolProp | 6.6.0 | Typically installed at `C:\Users\<user>\AppData\Roaming\CoolProp` |
+| C/C++ Compiler | Supported by your MATLAB release | [Compiler support list](https://www.mathworks.com/support/requirements/supported-compilers.html) |
+
+**Installation steps:**
+1. Install REFPROP 10.x and note the `Refprop.dll` path
+2. Install CoolProp 6.6.0 (usually auto-installed to `%APPDATA%\CoolProp`)
+3. Configure MATLAB C/C++ compiler: run `mex -setup` in MATLAB
+4. Add the MATLAB Interface for REFPROP and CoolProp to the MATLAB path
 
 #### 2. Correlation selection
 
