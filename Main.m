@@ -78,6 +78,10 @@ residual_limit = 1e-3;
 length_heat = size(heatPaths,2);
 length_dp   = size(pdropPaths,2);
 
+% 收敛历史记录
+residual_history = zeros(loopmax, 1);
+dp_loop_history   = zeros(loopmax, 1);
+
 tic
 for i1 = 1:loopmax
     residual_max = 0;
@@ -152,6 +156,14 @@ for i1 = 1:loopmax
             break
         end
         u0 = u;
+    end
+
+    % 记录收敛历史
+    residual_history(i1) = residual_max;
+    if isempty(N)
+        dp_loop_history(i1) = 0;
+    else
+        dp_loop_history(i1) = max(abs((dp_tube')*N));
     end
 end
 time = toc;
