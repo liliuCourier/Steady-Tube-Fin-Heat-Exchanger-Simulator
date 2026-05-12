@@ -1,5 +1,8 @@
-% PostProcessing — 后处理集成入口 (Demo1.01)
+% PostProcessing — 后处理集成入口 (Demo1.02)
 % 仿真完成后运行此脚本，一键生成全部可视化与性能报告
+
+% 添加后处理函数路径
+addpath(fullfile(fileparts(mfilename('fullpath')), 'PostProcessing'));
 
 %% 1. 流路拓扑可视化
 plotTubeLayout(TCinf, GeoCondition);
