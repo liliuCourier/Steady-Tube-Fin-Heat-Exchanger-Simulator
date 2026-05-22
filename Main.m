@@ -92,14 +92,17 @@ length_dp   = size(pdropPaths,2);
 % 收敛历史记录
 residual_history = zeros(loopmax, 1);
 dp_loop_history   = zeros(loopmax, 1);
+tube_cal = 0;
+R_coef = 1.81;
+
 
 tic
 for i1 = 1:loopmax
     residual_max = 0;
     % 换热路径扫描（广度优先）
     [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
-     p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-     dp_tube, residual_max] = scanTubes(...
+        p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+        dp_tube, residual_max] = scanTubes(...
         heatPaths, predecessors_in, ...
         h_R_in, h_R_out, T_MA_in, T_MA_out, ...
         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
@@ -107,6 +110,7 @@ for i1 = 1:loopmax
         CV_num, row, 1, Prop_handle, ...
         h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
         residual_max, dp_tube);
+    tube_cal = tube_cal + 1;
 
     if isempty(N)
         % 无环路：直接过渡到第二次广度优先压力场更新
@@ -120,34 +124,19 @@ for i1 = 1:loopmax
             CV_num, row, 2, Prop_handle, ...
             h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
             residual_max, dp_tube);
+        tube_cal = tube_cal + 1;
 
         if residual_max < residual_limit
             disp("残差收敛")
             break
         end
     else
-        % 有环路：环路压降扫描 + 流量重分配
+
+    % 再更新一次压力场
+    % for i2 = 1:loopmax
         [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
-         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-         dp_tube, residual_max] = scanTubes(...
-            pdropPaths, predecessors_in, ...
-            h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-            mdot_R, mdot_MA, TCinf, GeoCondition, ...
-            CV_num, row, 2, Prop_handle, ...
-            h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
-            residual_max, dp_tube);
-
-        % 根据环路压降重新计算流量分配
-        R_flow = dp_tube*1e6./(mdot_R.^2);
-        u = fsolve(@(u)uF(u,R_flow,N,mdot0),u0,options);
-        mdot_R = mdot0 + N*u;
-        u0 = u;
-
-        % 再更新一次压力场
-        [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
-         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-         dp_tube, residual_max] = scanTubes(...
+            dp_tube, residual_max] = scanTubes(...
             heatPaths, predecessors_in, ...
             h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
@@ -155,32 +144,46 @@ for i1 = 1:loopmax
             CV_num, row, 2, Prop_handle, ...
             h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
             residual_max, dp_tube);
+        tube_cal = tube_cal + 1;
 
         % 第二次更新流量场
-        R_flow = dp_tube*1e6./(mdot_R.^2);
-        u = fsolve(@(u)uF(u,R_flow,N,mdot0),u0,options);
+        R_flow = dp_tube*1e6./(mdot_R.^R_coef);
+        u = fsolve(@(u)uF(u,R_flow,N,mdot0,R_coef),u0,options);
         mdot_R = mdot0 + N*u;
+        u0 = u;
 
         % 环路压降收敛判断
-        if max(abs((dp_tube')*N)) < 1e-6 && (residual_max < residual_limit)
-            disp("压降收敛")
-            break
-        end
-        u0 = u;
+    %     if max(abs((dp_tube')*N)) < 1e-6 
+    %         disp("压降收敛")
+    %         break
+    %     end
+    % end
+    
     end
 
-    % 记录收敛历史
     residual_history(i1) = residual_max;
+
+    % 记录收敛历史
     if isempty(N)
         dp_loop_history(i1) = 0;
     else
         dp_loop_history(i1) = max(abs((dp_tube')*N));
     end
+
+    if max(abs((dp_tube')*N)) < 1e-6 && (residual_max < residual_limit)
+        disp("压降收敛")
+        break
+    end
+    
+    
 end
 time = toc;
 
 % 导出最终收敛指标
 dp_loop_max = dp_loop_history(i1);
+% 每根管的最终合理的压阻系数：
+% log(dp_tube*1e6./R_flow)./log(mdot_R)
+
 
 fprintf('求解完成，耗时 %.2f s，正在运行后处理...\n', time);
 
@@ -192,11 +195,13 @@ catch ME
 end
 
 %%
-function F = uF(u,R_flow,N,mdot0)
- dp_tube = (R_flow).*(mdot0 + N*u).^2;
+function F = uF(u,R_flow,N,mdot0,R_coef)
+ dp_tube = (R_flow).*(mdot0 + N*u).^R_coef;
  dp_loop = (dp_tube')*N;
  F = dp_loop;
 end
+
+
 
 
 function  F = alg(x0,BD,InletBD,GeoCondition,CV,N,solver_flag,Prop_handle)
