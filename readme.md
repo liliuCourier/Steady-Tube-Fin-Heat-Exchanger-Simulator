@@ -49,6 +49,9 @@
 - 收敛判据（环路压降 + 残差）统一移至外层迭代末尾
 - 添加压阻指数诊断注释 `log(dp_tube*1e6./R_flow)./log(mdot_R)` 供标定参考
 
+**Bug 修复：**
+- 环路压降收敛历史图 `dp_loop_history` 缺少 `*1e6` 单位转换（内部 MPa → 显示 Pa）
+
 **为何改指数：** Domanski (1989) 最早采用 $\Delta p = R \cdot m^{1.75}$（湍流 Blasius 标度），Ding (2004) 沿用。$1.81$ 比 $2.0$ 更贴近管内流动的物理标度，且配合 `heatPaths` 统一路径，避免了 `pdropPaths` 额外扫描带来的计算开销。
 
 ### 仿真流程
@@ -198,6 +201,9 @@ Solver algorithm update: variable-exponent pressure-resistance model + unified h
 - Added `tube_cal` counter to track total scan operations
 - Convergence criterion (loop pressure drop + residual) unified at outer-loop end
 - Added diagnostic comment `log(dp_tube*1e6./R_flow)./log(mdot_R)` for exponent calibration
+
+**Bug fix:**
+- Loop pressure-drop convergence history plot: `dp_loop_history` missing `*1e6` unit conversion (internal MPa → display Pa)
 
 **Why change the exponent:** Domanski (1989) first adopted $\Delta p = R \cdot m^{1.75}$ (turbulent Blasius scaling), followed by Ding (2004). $1.81$ is closer to the physical scaling of in-tube flow than $2.0$, and the unified heatPaths scan avoids the extra computational overhead of the separate pdropPaths pass.
 
