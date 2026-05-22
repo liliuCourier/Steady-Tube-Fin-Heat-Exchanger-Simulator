@@ -71,7 +71,7 @@ iter_p_out = cell(loopmax, 1);
 iter_mdot  = cell(loopmax, 1);
 iter_dp    = cell(loopmax, 1);
 
-%% 主求解循环
+%% Phase 1: 粗调 — 热力扫描提取压阻并更新压力场，直接调节流量至稳定
 tic
 for i1 = 1:loopmax
     iter_h_out{i1} = h_R_out;
@@ -83,7 +83,7 @@ for i1 = 1:loopmax
     residual_max = 0;
     [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
      p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-     R_flow, residual_max] = scanTubes_loop(...
+     R_flow, dp_tube, residual_max] = scanTubes_loop(...
         heatPaths, predecessors_in, ...
         h_R_in, h_R_out, T_MA_in, T_MA_out, ...
         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
@@ -107,10 +107,9 @@ for i1 = 1:loopmax
             break
         end
     else
-        % 用热力扫描中提取的压阻直接调节流量
+        % Phase 1: 用热力扫描中提取的压阻直接调节流量
         u = fsolve(@(u)uF(u,R_flow,N,mdot0,R_coef),u0,options);
         mdot_R = mdot0 + N*u;
-        u0 = u;
 
         residual_history(i1) = residual_max;
 
@@ -119,27 +118,74 @@ for i1 = 1:loopmax
         dp_loop = max(abs((dp_est')*N));
         dp_loop_history(i1) = dp_loop;
 
-        if dp_loop < 1e-6 && residual_max < residual_limit
-            % 收敛：最后一次迭代进行完整压力场更新
-            [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
-             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-             dp_tube, residual_max] = scanTubes(...
-                heatPaths, predecessors_in, ...
-                h_R_in, h_R_out, T_MA_in, T_MA_out, ...
-                p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-                mdot_R, mdot_MA, TCinf, GeoCondition, ...
-                CV_num, row, 2, Prop_handle, ...
-                h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
-                residual_max, dp_tube);
-            tube_cal = tube_cal + 1;
-            snapshot_h_out{tube_cal} = h_R_out;
-            snapshot_p_out{tube_cal} = p_R_out;
-            snapshot_mdot{tube_cal}  = mdot_R;
-            snapshot_dp{tube_cal}    = dp_tube;
-            snapshot_flag(tube_cal)  = 2;
-            snapshot_iter(tube_cal)  = i1;
+        % 流量稳定则步出 Phase 1，进入 Phase 2 精调
+        if max(abs(u - u0)./u0) < 1e-3
+            disp("Phase1 流量稳定，进入精调")
+            break
+        end
+        u0 = u;
+    end
+end
 
+% Phase 2: 精调 — 与 Main 一致：热力+压力+流量重分配，满足精度步出
+if ~isempty(N)
+    for i2 = i1+1:loopmax
+        iter_h_out{i2} = h_R_out;
+        iter_p_out{i2} = p_R_out;
+        iter_mdot{i2}  = mdot_R;
+        iter_dp{i2}    = dp_tube;
+
+        % 热力扫描
+        residual_max = 0;
+        [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+         dp_tube, residual_max] = scanTubes(...
+            heatPaths, predecessors_in, ...
+            h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+            p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+            mdot_R, mdot_MA, TCinf, GeoCondition, ...
+            CV_num, row, 2, Prop_handle, ...
+            h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
+            residual_max, dp_tube);
+        tube_cal = tube_cal + 1;
+        snapshot_h_out{tube_cal} = h_R_out;
+        snapshot_p_out{tube_cal} = p_R_out;
+        snapshot_mdot{tube_cal}  = mdot_R;
+        snapshot_dp{tube_cal}    = dp_tube;
+        snapshot_flag(tube_cal)  = 2;
+        snapshot_iter(tube_cal)  = i2;
+
+        % 压力扫描
+        [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+         dp_tube, residual_max] = scanTubes(...
+            heatPaths, predecessors_in, ...
+            h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+            p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+            mdot_R, mdot_MA, TCinf, GeoCondition, ...
+            CV_num, row, 1, Prop_handle, ...
+            h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
+            residual_max, dp_tube);
+        tube_cal = tube_cal + 1;
+        snapshot_h_out{tube_cal} = h_R_out;
+        snapshot_p_out{tube_cal} = p_R_out;
+        snapshot_mdot{tube_cal}  = mdot_R;
+        snapshot_dp{tube_cal}    = dp_tube;
+        snapshot_flag(tube_cal)  = 1;
+        snapshot_iter(tube_cal)  = i2;
+
+        % 流量重分配
+        R_flow = dp_tube*1e6./(mdot_R.^R_coef);
+        u = fsolve(@(u)uF(u,R_flow,N,mdot0,R_coef),u0,options);
+        mdot_R = mdot0 + N*u;
+        u0 = u;
+
+        residual_history(i2) = residual_max;
+        dp_loop_history(i2)   = max(abs((dp_tube')*N));
+
+        if max(abs((dp_tube')*N)) < 1e-6 && (residual_max < residual_limit)
             disp("压降收敛")
+            i1 = i2;
             break
         end
     end
@@ -273,7 +319,7 @@ end
 
 function [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
           p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-          R_flow, residual_max] = scanTubes_loop(...
+          R_flow, dp_tube, residual_max] = scanTubes_loop(...
     tubePaths, predecessors_in, ...
     h_R_in, h_R_out, T_MA_in, T_MA_out, ...
     p_R_in, p_R_out, p_MA_in, p_MA_out, ...
@@ -283,7 +329,8 @@ function [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
     residual_max, R_coef)
 
 nTubes = length(tubePaths);
-R_flow = zeros(nTubes, 1);   % 每根管的压阻
+R_flow  = zeros(nTubes, 1);
+dp_tube = zeros(nTubes, 1);   % 每根管总压降 (Pa)
 
 for i2 = 1:nTubes
     tube = tubePaths(i2);
@@ -316,7 +363,7 @@ for i2 = 1:nTubes
 
     flowDirection = TCinf.FlowDirection(tube);
 
-    dp_tube = 0;  % 累积本管总压降
+    dp_acc = 0;  % 累积本管总压降 (Pa)
 
     for i3 = 1:CV_num
         rev = CV_num + 1 - i3;
@@ -340,8 +387,11 @@ for i2 = 1:nTubes
         residual_max = max(max(abs(xout(1:2) - x0) ./ x0), residual_max);
 
         h_R_out_tube(i3) = xout(1);
-        dp_CV = xout(3);            % ← 提取本 CV 压降 (Pa)
-        dp_tube = dp_tube + dp_CV;  % 累加
+        dp_CV = xout(3);            % 提取本 CV 压降 (Pa)
+        dp_acc = dp_acc + dp_CV;  % 累加
+
+        % 同步推进压力场
+        p_R_out_tube(i3) = p_R_in_tube(i3) - dp_CV/1e6;
 
         if flowDirection == 1
             T_MA_out(i3, tube) = xout(2);
@@ -350,15 +400,20 @@ for i2 = 1:nTubes
         end
         if i3 < CV_num
             h_R_in_tube(i3 + 1) = xout(1);
+            p_R_in_tube(i3 + 1) = p_R_out_tube(i3);
         end
     end
 
     h_R_out(:, tube) = h_R_out_tube;
     h_R_in(:, tube)  = h_R_in_tube;
+    p_R_out(:, tube) = p_R_out_tube;
+    p_R_in(:, tube)  = p_R_in_tube;
     T_MA_in = [T_MA_inlet * ones(CV_num, row), T_MA_out(:, 1:end-row)];
+    p_MA_in = [p_MA_inlet * ones(CV_num, row), p_MA_out(:, 1:end-row)];
 
-    % 管级压阻: dp_CV 来自 R_cal_10 已是 Pa, dp_tube 也是 Pa
-    R_flow(tube) = dp_tube ./ (mdot_R_tube .^ R_coef);
+    % 管级压阻: dp_acc 是各 CV 压降之和 (Pa)
+    dp_tube(tube) = dp_acc;
+    R_flow(tube)  = dp_acc ./ (mdot_R_tube .^ R_coef);
 end
 end
 
