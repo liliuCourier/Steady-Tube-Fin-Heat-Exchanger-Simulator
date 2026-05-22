@@ -37,6 +37,20 @@
 4. 收敛历史双图 — 能量残差 + 环路压降残差（对数坐标）
 5. `exportHxPerf.m` — 标准化 `hxPerf` 结构体，供优化器直接调用
 
+### 5/22 Demo1.11
+
+求解器算法更新：压阻模型指数可变化 + 换热/压力统一路径。
+
+**算法变更：**
+- 引入 `R_coef = 1.81`（基于 Blasius 摩擦因子关系 $\Delta p \propto m^{1.75}$）替代硬编码平方指数
+- `uF` 函数新增 `R_coef` 参数，`fsolve` 压阻方程求解同步参数化
+- 移除首次迭代中单独的环路优先路径（`pdropPaths`）压力扫描，换热与压力统一沿 `heatPaths` 广度优先路径计算
+- 新增 `tube_cal` 计数器记录总扫描操作次数
+- 收敛判据（环路压降 + 残差）统一移至外层迭代末尾
+- 添加压阻指数诊断注释 `log(dp_tube*1e6./R_flow)./log(mdot_R)` 供标定参考
+
+**为何改指数：** Domanski (1989) 最早采用 $\Delta p = R \cdot m^{1.75}$（湍流 Blasius 标度），Ding (2004) 沿用。$1.81$ 比 $2.0$ 更贴近管内流动的物理标度，且配合 `heatPaths` 统一路径，避免了 `pdropPaths` 额外扫描带来的计算开销。
+
 ### 仿真流程
 
 1. 运行 `PreProcessing` 完成三类预处理：
@@ -172,6 +186,20 @@ Comprehensive refactoring from Demo1.0: fixed no-loop solver bug, completed six-
 3. `summaryTable.m` — Console performance summary (heat load/dp/temperatures/per-tube breakdown/outlet state matrix)
 4. Convergence history dual-plot — energy residual + loop pressure residual (log scale)
 5. `exportHxPerf.m` — Standardized `hxPerf` struct for optimizer integration
+
+### 5/22 Demo1.11 Release
+
+Solver algorithm update: variable-exponent pressure-resistance model + unified heat/pressure path.
+
+**Algorithm changes:**
+- Introduced `R_coef = 1.81` (based on Blasius friction factor scaling $\Delta p \propto m^{1.75}$) replacing hardcoded square exponent
+- `uF` function gains `R_coef` parameter; `fsolve` resistance-equation solving is now parameterized
+- Removed separate first-iteration loop-priority path (`pdropPaths`) pressure scan; heat and pressure now both use the same breadth-first path (`heatPaths`)
+- Added `tube_cal` counter to track total scan operations
+- Convergence criterion (loop pressure drop + residual) unified at outer-loop end
+- Added diagnostic comment `log(dp_tube*1e6./R_flow)./log(mdot_R)` for exponent calibration
+
+**Why change the exponent:** Domanski (1989) first adopted $\Delta p = R \cdot m^{1.75}$ (turbulent Blasius scaling), followed by Ding (2004). $1.81$ is closer to the physical scaling of in-tube flow than $2.0$, and the unified heatPaths scan avoids the extra computational overhead of the separate pdropPaths pass.
 
 ### Simulation Workflow
 
