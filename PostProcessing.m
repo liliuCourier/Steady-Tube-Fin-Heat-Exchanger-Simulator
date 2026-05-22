@@ -37,7 +37,7 @@ if isempty(N)
         'HorizontalAlignment', 'center', 'FontSize', 12);
     title('环路压降平衡 (N/A)');
 else
-    semilogy(1:i1, dp_loop_history, 'r-s', 'LineWidth', 1.5, 'MarkerSize', 8);
+    semilogy(1:i1, dp_loop_history*1e6, 'r-s', 'LineWidth', 1.5, 'MarkerSize', 8);
     xlabel('迭代次数'); ylabel('环路压降残差 (Pa)');
     title(sprintf('环路压降收敛历史 (最终: %.2e Pa)', dp_loop_history(end)));
     grid on;
