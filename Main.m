@@ -95,9 +95,29 @@ dp_loop_history   = zeros(loopmax, 1);
 tube_cal = 0;
 R_coef = 1.81;
 
+% 每次 scanTubes 后的场量快照（用于收敛轨迹分析）
+max_scans = loopmax * 3 + 1;
+snapshot_h_out = cell(max_scans, 1);
+snapshot_p_out = cell(max_scans, 1);
+snapshot_mdot  = cell(max_scans, 1);
+snapshot_dp    = cell(max_scans, 1);
+snapshot_flag  = zeros(max_scans, 1);  % 1=换热, 2=压力
+snapshot_iter  = zeros(max_scans, 1);  % 所属外层迭代编号
+
+% 每次外层迭代后的场量快照（用于迭代级收敛轨迹）
+iter_h_out = cell(loopmax, 1);
+iter_p_out = cell(loopmax, 1);
+iter_mdot  = cell(loopmax, 1);
+iter_dp    = cell(loopmax, 1);
 
 tic
 for i1 = 1:loopmax
+    % 记录迭代级场量快照（本次迭代的出发点）
+    iter_h_out{i1} = h_R_out;
+    iter_p_out{i1} = p_R_out;
+    iter_mdot{i1}  = mdot_R;
+    iter_dp{i1}    = dp_tube;
+
     residual_max = 0;
     % 换热路径扫描（广度优先）
     [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
@@ -107,10 +127,16 @@ for i1 = 1:loopmax
         h_R_in, h_R_out, T_MA_in, T_MA_out, ...
         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
         mdot_R, mdot_MA, TCinf, GeoCondition, ...
-        CV_num, row, 1, Prop_handle, ...
+        CV_num, row, 2, Prop_handle, ...
         h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
         residual_max, dp_tube);
     tube_cal = tube_cal + 1;
+    snapshot_h_out{tube_cal} = h_R_out;
+    snapshot_p_out{tube_cal} = p_R_out;
+    snapshot_mdot{tube_cal}  = mdot_R;
+    snapshot_dp{tube_cal}    = dp_tube;
+    snapshot_flag(tube_cal)  = 2;
+    snapshot_iter(tube_cal)  = i1;
 
     if isempty(N)
         % 无环路：直接过渡到第二次广度优先压力场更新
@@ -121,10 +147,16 @@ for i1 = 1:loopmax
             h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
             mdot_R, mdot_MA, TCinf, GeoCondition, ...
-            CV_num, row, 2, Prop_handle, ...
+            CV_num, row, 1, Prop_handle, ...
             h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
             residual_max, dp_tube);
         tube_cal = tube_cal + 1;
+        snapshot_h_out{tube_cal} = h_R_out;
+        snapshot_p_out{tube_cal} = p_R_out;
+        snapshot_mdot{tube_cal}  = mdot_R;
+        snapshot_dp{tube_cal}    = dp_tube;
+        snapshot_flag(tube_cal)  = 1;
+        snapshot_iter(tube_cal)  = i1;
 
         if residual_max < residual_limit
             disp("残差收敛")
@@ -141,10 +173,16 @@ for i1 = 1:loopmax
             h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
             mdot_R, mdot_MA, TCinf, GeoCondition, ...
-            CV_num, row, 2, Prop_handle, ...
+            CV_num, row, 1, Prop_handle, ...
             h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
             residual_max, dp_tube);
         tube_cal = tube_cal + 1;
+        snapshot_h_out{tube_cal} = h_R_out;
+        snapshot_p_out{tube_cal} = p_R_out;
+        snapshot_mdot{tube_cal}  = mdot_R;
+        snapshot_dp{tube_cal}    = dp_tube;
+        snapshot_flag(tube_cal)  = 1;
+        snapshot_iter(tube_cal)  = i1;
 
         % 第二次更新流量场
         R_flow = dp_tube*1e6./(mdot_R.^R_coef);
