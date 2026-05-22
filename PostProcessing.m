@@ -91,8 +91,8 @@ end
 xlabel('管扫描累计次数 (tube\_cal)');
 ylabel('与最终解的相对偏差');
 title(sprintf('管扫描级收敛轨迹 (%d 次扫描)', tube_cal));
-legend({'$\epsilon_h$', '$\epsilon_p$', '$\epsilon_m$', '$\epsilon_{\Delta p}$'}, ...
-    'Interpreter', 'latex', 'Location', 'northeast');
+legend({'\epsilon_h', '\epsilon_p', '\epsilon_m', '\epsilon_{\Delta p}'}, ...
+    'Interpreter', 'tex', 'Location', 'northeast');
 grid on; hold off;
 
 % --- 子图2：迭代级误差 (i1 为横轴) ---
@@ -127,8 +127,8 @@ semilogy(1:i1, iter_err_dp, 'm-d', 'LineWidth', 1.5, 'MarkerSize', 8);
 xlabel('外层迭代次数');
 ylabel('与最终解的相对偏差');
 title(sprintf('迭代级收敛轨迹 (%d 次迭代)', i1));
-legend({'$\epsilon_h$', '$\epsilon_p$', '$\epsilon_m$', '$\epsilon_{\Delta p}$'}, ...
-    'Interpreter', 'latex', 'Location', 'northeast');
+legend({'\epsilon_h', '\epsilon_p', '\epsilon_m', '\epsilon_{\Delta p}'}, ...
+    'Interpreter', 'tex', 'Location', 'northeast');
 grid on; hold off;
 
 sgtitle(sprintf('收敛轨迹 (求解耗时 %.2f s)', time));
@@ -136,7 +136,7 @@ sgtitle(sprintf('收敛轨迹 (求解耗时 %.2f s)', time));
 %% 4.6 综合收敛指标 — 管扫描级，迭代分段着色
 snapshot_iter = snapshot_iter(1:tube_cal);
 
-err_total = sqrt(err_h.^2 + err_p.^2 + err_m.^2 + err_dp.^2);
+err_total = sqrt(0.5*err_h.^2 + 0.2*err_p.^2 + 0.1*err_m.^2 + 0.2*err_dp.^2);
 
 figure('Name', '综合收敛指标', 'NumberTitle', 'off');
 
@@ -167,12 +167,12 @@ for k = 2:length(iter_edges)-1
 end
 
 xlabel('管扫描累计次数 (tube\_cal)');
-ylabel('综合相对偏差 $\varepsilon_{\rm total}$', 'Interpreter', 'latex');
+ylabel('综合相对偏差 \epsilon_{total}', 'Interpreter', 'tex');
 title(sprintf('综合收敛轨迹 (%d 次扫描, %d 次迭代)', tube_cal, i1));
 h_total = semilogy(nan, nan, 'k.-', 'LineWidth', 2.5, 'MarkerSize', 18);
 legend([h_heat, h_pres, h_total], ...
-    {'换热扫描', '压力扫描', '$\varepsilon_{\rm total}$'}, ...
-    'Interpreter', 'latex', 'Location', 'northeast');
+    {'换热扫描', '压力扫描', '\epsilon_{total}'}, ...
+    'Interpreter', 'tex', 'Location', 'northeast');
 xlim([0.5, tube_cal + 0.5]);
 grid on; hold off;
 
