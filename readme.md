@@ -145,7 +145,7 @@ Cavallini-Zecchin 两相公式与 Gnielinski 单相公式在干度 x=0 和 x=1 �
    - **无环路时**：
      - a. 固定压力场，沿广度优先路径更新热力场；
      - b. 直接沿广度优先路径更新压力场，残差收敛即退出。
-4. 换热求解和压降求解均采用不动点迭代法，流量更新采用 `fsolve` 求解压阻方程。
+4. 换热求解和压降求解均采用不动点迭代法，流量更新采用显式线性化直接求解（见下方）。
 5. 在 16 根管、2 进 2 出（环路数为 4）的计算中，流量分配与 CoilDesigner 计算结果基本一致。
 
 #### 收敛判据（双层结构）
@@ -169,6 +169,28 @@ Cavallini-Zecchin 两相公式与 Gnielinski 单相公式在干度 x=0 和 x=1 �
 | `residual_max` | 本次扫描与上次扫描所有 CV 状态量（h_R_out, p_R_out, T_MA_out, p_MA_out）的最大相对变化 | < 1e-3 |
 
 两个条件分别对应并联支路压力平衡和全场迭代稳定。有环路时两者都需满足；无环路时压降判据自动跳过（`N` 为空，`dp_loop_history=0`），仅判断 `residual_max < 1e-3`。
+
+#### 流量更新 — 显式线性化
+
+环路流量重分配原采用 `fsolve`（Levenberg-Marquardt）求解非线性压阻方程组，每轮需多次调用 `uF` 函数。改为显式线性化（单步 Newton 步）：
+
+**物理模型**：管压降服从 `Δp = R · m^e`（e = 1.81，Blasius 标度），环路平衡要求 `N' · Δp = 0`。
+
+**推导**：在 u0 处一阶 Taylor 展开 `(m0 + N·u)^e`：
+
+```
+d(dp)/dm = e · R · m^(e-1) = e · dp / m        ← 管级灵敏度
+N' · diag(S) · N · Δu = -N' · dp               ← 环路线性方程组
+```
+
+其中 `S = e · dp / m`（管灵敏度向量），矩阵 `A = N'·diag(S)·N` 为 n_loops × n_loops 对称正定。16 管 4 环路场景下 A 仅 4×4，`A\b` 直接求解。
+
+| 项目 | fsolve | 显式线性化 |
+|------|--------|-----------|
+| 方法 | Levenberg-Marquardt 迭代 | A\b 直接法 |
+| uF 调用 | 3-8 次/外层迭代 | 0 |
+| 矩阵规模 | — | 4×4（4 环路） |
+| 代码位置 | `Main.m:191-194`（注释保留） | `Main.m:190-197` |
 
 ### 注意事项
 
@@ -391,6 +413,28 @@ Inner convergence is the foundation: if any CV's fixed-point iteration fails ("�
 | `residual_max` | Max relative change of all CV state variables (h_R_out, p_R_out, T_MA_out, p_MA_out) between successive scans | < 1e-3 |
 
 These correspond to parallel-branch pressure balance and global field stationarity. With loops, both must hold; without loops, the pressure criterion is automatically skipped (`N` empty, `dp_loop_history=0`).
+
+#### Flow Update — Explicit Linearization
+
+Loop mass flow redistribution originally used `fsolve` (Levenberg-Marquardt) to solve the nonlinear resistance equations, requiring multiple `uF` calls per outer iteration. Replaced with explicit linearization (single Newton step):
+
+**Model**: Tube pressure drop `Δp = R · m^e` (e = 1.81, Blasius scaling). Loop balance requires `N' · Δp = 0`.
+
+**Derivation**: First-order Taylor expansion of `(m0 + N·u)^e` at u0:
+
+```
+d(dp)/dm = e · R · m^(e-1) = e · dp / m        ← per-tube sensitivity
+N' · diag(S) · N · Δu = -N' · dp               ← loop linear system
+```
+
+Where `S = e · dp / m`. Matrix `A = N'·diag(S)·N` is n_loops × n_loops, symmetric positive-definite. For 16 tubes / 4 loops, A is only 4×4 — solved directly via `A\b`.
+
+| Method | fsolve | Explicit linearization |
+|--------|--------|----------------------|
+| Solver | Levenberg-Marquardt iterative | A\b direct |
+| uF calls | 3-8 per outer iteration | 0 |
+| Matrix size | — | 4×4 (4 loops) |
+| Code | `Main.m:191-194` (commented out) | `Main.m:190-197` |
 
 ### Important Notes
 
