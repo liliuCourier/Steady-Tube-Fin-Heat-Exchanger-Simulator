@@ -158,7 +158,48 @@ Prop_handle = Prop_load(refprop_location, R, 1e-3, 5.5, 80, 510, 100, 25, 25);
 3. 配置 MATLAB 的 C/C++ 编译器：在 MATLAB 中运行 `mex -setup`
 4. 将 MATLAB Interface for REFPROP and CoolProp 添加至 MATLAB 路径
 
-#### 2. 关联式选择
+#### 2. 光滑过渡 — 消除迭代断点
+
+`R_cal_10.m` 中两处采用线性权重光滑过渡，消除硬切换在不动点迭代中引发的振荡：
+
+**2a. 层流-湍流 Nu 过渡（Re 1000→1200）**
+
+Gnielinski 公式仅适用于 Re>1000 的湍流区，层流区 Nu 取常数 3.66。原先 `if Re>1000` 硬切换，Re 在 1000 附近波动时 Nu 反复跳变，迭代无法稳定。
+
+改为 Re ∈ [1000, 1200] 线性混合：
+
+```
+w = (Re - 1000) / 200             % [1000,1200] → [0,1]
+Nu = 3.66 × (1-w) + Nu_gn × w    % 层流主导 → 湍流主导
+```
+
+| Re | w | 层流项占比 | 效果 |
+|----|---|----------|------|
+| ≤1000 | 0 | 100% | 纯层流 Nu=3.66 |
+| 1100 | 0.5 | 50% | 等权混合 |
+| ≥1200 | 1 | 0% | 纯 Gnielinski |
+
+**2b. 单相-两相换热系数过渡（x_CV 0→0.05 和 0.95→1）**
+
+Cavallini-Zecchin 两相公式与 Gnielinski 单相公式在不同干度 x 下分别适用。原先直接切换，x 跨过 0 或 1 时 h 产生跳变。
+
+改为液相→两相、两相→气相两个过渡带，各宽 Δx=0.05：
+
+```
+液相→两相 (x ∈ [0, 0.05]):
+  w = x / 0.05                     % [0, 0.05] → [0, 1]
+  h = h_1P × (1-w) + h_2P × w      % 单相主导 → 两相主导
+
+两相→气相 (x ∈ [0.95, 1]):
+  w2 = (x - 0.95) / 0.05           % [0.95, 1] → [0, 1]
+  h = h_mix × (1-w2) + h_1P × w2   % 两相主导 → 单相主导
+```
+
+**设计原则**：两处均采用线性权重而非 Hermite 高阶光滑，因为过渡带足够窄（200 Re 单位 / 0.05 干度），线性即可消除迭代振荡，且计算开销最低。
+
+---
+
+#### 3. 关联式选择
 
 不同的关联式会产生不同的结果。具体的关联式请在 `R_cal_10.m`（工质侧求解器）和 `DryA_cal_10.m`（空气侧求解器）中的"关联式区域"自己设置。
 
@@ -356,7 +397,48 @@ This program calls REFPROP through the **MATLAB Interface for REFPROP and CoolPr
 3. Configure MATLAB C/C++ compiler: run `mex -setup` in MATLAB
 4. Add the MATLAB Interface for REFPROP and CoolProp to the MATLAB path
 
-#### 2. Correlation selection
+#### 2. Smooth transitions — eliminating iteration discontinuities
+
+`R_cal_10.m` uses linear-weight smoothing at two transition points to prevent hard switches from causing fixed-point iteration oscillation:
+
+**2a. Laminar-turbulent Nu transition (Re 1000→1200)**
+
+Gnielinski correlation applies only for Re>1000 (turbulent); below that, Nu=3.66 (laminar constant). The original `if Re>1000` hard switch caused Nu to jump when Re oscillated near 1000, destabilizing the iteration.
+
+Now: linear blend over Re ∈ [1000, 1200]:
+
+```
+w = (Re - 1000) / 200             % [1000,1200] → [0,1]
+Nu = 3.66 × (1-w) + Nu_gn × w    % laminar-dominated → turbulent-dominated
+```
+
+| Re | w | Laminar share | Result |
+|----|---|--------------|--------|
+| ≤1000 | 0 | 100% | Pure laminar Nu=3.66 |
+| 1100 | 0.5 | 50% | Equal blend |
+| ≥1200 | 1 | 0% | Pure Gnielinski |
+
+**2b. Single-phase to two-phase HTC transition (x_CV 0→0.05 and 0.95→1)**
+
+Cavallini-Zecchin (two-phase) and Gnielinski (single-phase) HTC correlations apply in different quality ranges. Direct switching at x=0 or x=1 caused discontinuous jumps in heat transfer coefficient.
+
+Two transition bands, each Δx=0.05 wide:
+
+```
+Liquid → two-phase (x ∈ [0, 0.05]):
+  w = x / 0.05                     % [0, 0.05] → [0, 1]
+  h = h_1P × (1-w) + h_2P × w      % single-phase → two-phase
+
+Two-phase → vapor (x ∈ [0.95, 1]):
+  w2 = (x - 0.95) / 0.05           % [0.95, 1] → [0, 1]
+  h = h_mix × (1-w2) + h_1P × w2   % two-phase → single-phase
+```
+
+**Design rationale**: Linear weighting is used in both cases rather than higher-order (e.g. Hermite) smoothing. The transition bands are narrow enough (200 Re units / 0.05 quality) that linear interpolation eliminates oscillation with minimal computational cost.
+
+---
+
+#### 3. Correlation selection
 
 Different correlations lead to different results. Please set the desired correlations in the "correlation section" of `R_cal_10.m` (refrigerant-side solver) and `DryA_cal_10.m` (air-side solver).
 
