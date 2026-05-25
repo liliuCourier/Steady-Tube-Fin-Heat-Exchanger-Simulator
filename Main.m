@@ -8,12 +8,6 @@ addpath(fullfile(root, 'PostProcessing'));
 addpath(fullfile(root, 'PreProc'));
 
 %%
-% if ~exist('Prop_handle','var')
-%     refprop_location = 'E:\refprop10\REFPROP';
-%     R = 'R134a';
-%     Prop_handle = Prop_load(refprop_location,R,1e-3,5.5,80,510,100,25,25);
-% end
-
 % 检查预处理数据是否就绪
 if ~exist('TCinf','var')
     error('TCinf 未找到，请先运行 PreProcessing');
@@ -138,16 +132,18 @@ for i1 = 1:loopmax
     snapshot_flag(tube_cal)  = 1;
     snapshot_iter(tube_cal)  = i1;
 
+
+    % 检查是否有环路，如果没有环路，流量固定，不需要调整流量
     if isempty(N)
         % 无环路：直接过渡到第二次广度优先压力场更新
         [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
-         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-         dp_tube, residual_max] = scanTubes(...
+            p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+            dp_tube, residual_max] = scanTubes(...
             heatPaths, predecessors_in, ...
             h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
             mdot_R, mdot_MA, TCinf, GeoCondition, ...
-            CV_num, row, 1, Prop_handle, ...
+            CV_num, row, 2, Prop_handle, ...
             h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
             residual_max, dp_tube);
         tube_cal = tube_cal + 1;
@@ -155,17 +151,20 @@ for i1 = 1:loopmax
         snapshot_p_out{tube_cal} = p_R_out;
         snapshot_mdot{tube_cal}  = mdot_R;
         snapshot_dp{tube_cal}    = dp_tube;
-        snapshot_flag(tube_cal)  = 1;
+        snapshot_flag(tube_cal)  = 2;
         snapshot_iter(tube_cal)  = i1;
 
+        dp_loop_history(i1) = 0;
         if residual_max < residual_limit
             disp("残差收敛")
             break
         end
+
+        % 有环路时需要更新流量
     else
 
-    % 再更新一次压力场
-    %for i2 = 1:loopmax
+        % 再更新一次压力场
+        %for i2 = 1:loopmax
         [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
             dp_tube, residual_max] = scanTubes(...
@@ -191,38 +190,28 @@ for i1 = 1:loopmax
         u0 = u;
 
         % 环路压降收敛判断
-    %     if max(abs((dp_tube')*N)) < 1e-6 
-    %         disp("压降收敛")
-    %         break
-    %     end
-    % end
-    
-    end
+        %     if max(abs((dp_tube')*N)) < 1e-6
+        %         disp("压降收敛")
+        %         break
+        %     end
+        % end
 
-    residual_history(i1) = residual_max;
-
-    % 记录收敛历史
-    if isempty(N)
-        dp_loop_history(i1) = 0;
-    else
+        residual_history(i1) = residual_max;
         dp_loop_history(i1) = max(abs((dp_tube')*N));
-    end
+        if max(abs((dp_tube')*N)) < 1e-6 && (residual_max < residual_limit)
+            disp("压降收敛")
+            break
+        end
 
-    if max(abs((dp_tube')*N)) < 1e-6 && (residual_max < residual_limit)
-        disp("压降收敛")
-        break
     end
-    
-    
 end
 time = toc;
 
 % 导出最终收敛指标
 dp_loop_max = dp_loop_history(i1);
+
 % 每根管的最终合理的压阻系数：
 % log(dp_tube*1e6./R_flow)./log(mdot_R)
-
-
 fprintf('求解完成，耗时 %.2f s，正在运行后处理...\n', time);
 
 % 自动运行后处理
@@ -234,47 +223,45 @@ end
 
 %%
 function F = uF(u,R_flow,N,mdot0,R_coef)
- dp_tube = (R_flow).*(mdot0 + N*u).^R_coef;
- dp_loop = (dp_tube')*N;
- F = dp_loop;
+dp_tube = (R_flow).*(mdot0 + N*u).^R_coef;
+dp_loop = (dp_tube')*N;
+F = dp_loop;
 end
 
 
 
-
 function  F = alg(x0,BD,InletBD,GeoCondition,CV,N,solver_flag,Prop_handle)
-
 % 迭代上限
 loopmax = 100;
 % 残差阈值上限：
 residual_Energy = 1e-3;
 residual_dp = 1e-3;
 
-if solver_flag == 3
-
-    for i = 1:loopmax
-        x0_R  = [BD(1);x0(1)];
-        BD_R.h_R_inlet      = BD(2);
-        BD_R.mdot_R_inlet   = InletBD(1);
-        BD_R.p_R_inlet      = x0(2);
-        BD_R.Uband_L =      InletBD(2);
-
-        flag = 2;
-        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,flag);
-        dp_R        = out;
-        if max(abs((dp_R - (x0(2) - x0(1))*1e6)/dp_R))<residual_dp && i<loopmax
-            x0(1) = x0(2) - dp_R/1e6;
-            break
-        elseif i==loopmax
-            disp("Uband压降不动点迭代失败")
-        else
-            x0(1) = x0(2) - dp_R/1e6;
-        end
-    end
-
-    F = [dp_R,x0(1)];
-    return
-end
+% if solver_flag == 3
+% 
+%     for i = 1:loopmax
+%         x0_R  = [BD(1);x0(1)];
+%         BD_R.h_R_inlet      = BD(2);
+%         BD_R.mdot_R_inlet   = InletBD(1);
+%         BD_R.p_R_inlet      = x0(2);
+%         BD_R.Uband_L =      InletBD(2);
+% 
+%         flag = 2;
+%         out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,flag);
+%         dp_R        = out;
+%         if max(abs((dp_R - (x0(2) - x0(1))*1e6)/dp_R))<residual_dp && i<loopmax
+%             x0(1) = x0(2) - dp_R/1e6;
+%             break
+%         elseif i==loopmax
+%             disp("Uband压降不动点迭代失败")
+%         else
+%             x0(1) = x0(2) - dp_R/1e6;
+%         end
+%     end
+% 
+%     F = [dp_R,x0(1)];
+%     return
+% end
 
 h_R_inlet = InletBD(1);
 p_R_inlet = InletBD(2);
@@ -302,15 +289,27 @@ A_R_CV = A_R/CV/Tube_num;
 A_MA_CV = A_MA/CV/Tube_num;
 
 
-
 if solver_flag == 1
     
     x0_R =  [x0(1);BD(1)];
     x0_MA = [x0(2);BD(2)];
 
-    % inlet property cache: inlet p/h unchanged during fixed-point iteration
+    %     % inlet property cache: inlet p/h unchanged during fixed-point iteration
+    % 进口物性缓存：饱和物性提前从 Prop_handle 计算，同时用于入口
+    % Prop1（跳过 9 次插值）和出口 sat_cache（p_in≈p_out, dp~Pa）
+    sat_in = cell(1,9);
+    sat_in{1} = Prop_handle.v_liq(0, p_R_inlet);    % vsatliq
+    sat_in{2} = Prop_handle.v_vap(1, p_R_inlet);    % vsatvap
+    sat_in{3} = Prop_handle.Pr_liq(0, p_R_inlet);   % Prsatliq
+    sat_in{4} = Prop_handle.Pr_vap(1, p_R_inlet);   % Prsatvap
+    sat_in{5} = Prop_handle.Nu_liq(0, p_R_inlet);   % Nusatliq
+    sat_in{6} = Prop_handle.Nu_vap(1, p_R_inlet);   % Nusatvap
+    sat_in{7} = Prop_handle.k_liq(0, p_R_inlet);    % ksatliq
+    sat_in{8} = Prop_handle.k_vap(1, p_R_inlet);    % ksatvap
+    sat_in{9} = Prop_handle.T_liq(0, p_R_inlet);    % Tsatliq
+
     inlet_props = cell(1,14);
-    [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle);
+    [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_in);
     Ra = 287.047;
     inlet_air_props = cell(1,6);
     inlet_air_props{1} = Prop_handle.hair(T_MA_inlet);
@@ -320,17 +319,12 @@ if solver_flag == 1
     inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
     inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
 
-    % outlet saturation cache: p_out fixed during heat scan, reuse inlet sat
-    % (dp~Pa, sat props depend only on p, p_in~=p_out)
+    % 出口饱和缓存：复用 sat_in，仅 Tsatliq 重取 p_out
     sat_cache = cell(1,9);
-    sat_cache{1} = inlet_props{7};   % vsatliq
-    sat_cache{2} = inlet_props{8};   % vsatvap
-    sat_cache{3} = inlet_props{9};   % Prsatliq
-    sat_cache{4} = inlet_props{10};  % Prsatvap
-    sat_cache{5} = inlet_props{11};  % Nusatliq
-    sat_cache{6} = inlet_props{12};  % Nusatvap
-    sat_cache{7} = inlet_props{13};  % ksatliq
-    sat_cache{8} = inlet_props{14};  % ksatvap
+    sat_cache{1} = sat_in{1}; sat_cache{2} = sat_in{2};
+    sat_cache{3} = sat_in{3}; sat_cache{4} = sat_in{4};
+    sat_cache{5} = sat_in{5}; sat_cache{6} = sat_in{6};
+    sat_cache{7} = sat_in{7}; sat_cache{8} = sat_in{8};
     sat_cache{9} = Prop_handle.T_liq(0, BD(1));  % Tsatliq at p_out
 
     for i = 1:loopmax
@@ -354,14 +348,14 @@ if solver_flag == 1
         UA_R = 1./(1./(HTC_R*A_R_CV)+1./(n_fin.*HTC_MA*A_MA_CV));
 
         Q = dT.*UA_R;
-
         if max(abs([(dEF_R*1e3 - Q)/Q,(dEF_MA + Q)/Q]))<residual_Energy && i<loopmax
             x0_R(1) = h_R_inlet - Q/mdot_R_inlet/1e3;
             x0_MA(1) = Q/cp_MA/(mdot_MA_inlet) + T_MA_inlet;
             break
         elseif i==loopmax
             disp("换热不动点迭代失败")
-        else% 根据换热反算焓值
+        else
+            % 根据换热反算焓值
             x0_R(1) = h_R_inlet - Q/mdot_R_inlet/1e3;
             x0_MA(1) = Q/cp_MA/(mdot_MA_inlet) + T_MA_inlet;
         end
@@ -375,6 +369,7 @@ elseif solver_flag == 2
     x0_R  = [BD(1);x0(1)];
     x0_MA = [BD(2);x0(2)];
 
+    % 压力扫描中做对应的进口物性缓存，但是饱和物性不能缓存了
     % inlet property cache: inlet p/h unchanged during fixed-point iteration
     inlet_props = cell(1,14);
     [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle);
