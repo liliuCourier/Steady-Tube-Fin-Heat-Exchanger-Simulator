@@ -105,6 +105,7 @@ if has_loops
     subplot(1, 2, 1);
     n_tubes = length(R_flow_final);
     colors = lines(n_tubes);
+    leg_str = cell(n_tubes, 1);
     for t = 1:n_tubes
         R_t = zeros(tube_cal, 1);
         for j = 1:tube_cal
@@ -113,10 +114,12 @@ if has_loops
         semilogy(1:tube_cal, R_t, '.-', 'Color', colors(t,:), ...
             'LineWidth', 1.0, 'MarkerSize', 5);
         hold on;
+        leg_str{t} = sprintf('管%d', t);
     end
     xlabel('管扫描累计次数');
     ylabel('R_{flow} (Pa·s^e/kg^e)');
     title(sprintf('各管压阻系数变化 (%d次扫描)', tube_cal));
+    legend(leg_str, 'Location', 'bestoutside', 'FontSize', 7);
     grid on;
     hold off;
 
@@ -137,6 +140,7 @@ if has_loops
     xlabel('管扫描累计次数');
     ylabel('|R - R_{final}| / R_{final}');
     title('压阻系数相对最终值的误差');
+    legend(leg_str, 'Location', 'bestoutside', 'FontSize', 7);
     grid on;
     hold off;
 
