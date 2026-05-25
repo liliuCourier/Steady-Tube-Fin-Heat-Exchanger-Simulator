@@ -187,12 +187,23 @@ for i1 = 1:loopmax
         snapshot_flag(tube_cal)  = 2;
         snapshot_iter(tube_cal)  = i1;
 
-        % 第二次更新流量场
-        R_flow = dp_tube*1e6./(mdot_R.^R_coef);
-        u = fsolve(@(u)uF(u,R_flow,N,mdot0,R_coef),u0,options);
-        mdot_R = mdot0 + N*u;
-        u0 = u;
+        % 第二次更新流量场 — 显式线性化（单步 Newton）
+        % 非线性原式: dp = R·m^e, 环路平衡 N'·dp = 0
+        % 线性化: d(dp)/dm = e·dp/m → N'·diag(e·dp/m)·N·Δu = -N'·dp
+        dp_Pa = dp_tube * 1e6;                     % MPa → Pa
+        S = R_coef * dp_Pa ./ mdot_R;               % 灵敏度
+        A_mat = N' * (S .* N);                      % 环路矩阵 (对称正定)
+        b_vec = -N' * dp_Pa;                        % 环路不平衡量
+        du = A_mat \ b_vec;                         % 直接求解
+        mdot_R = mdot0 + N * (u0 + du);
+        u0 = u0 + du;
         u0_history{i1+1} = u0;
+
+        % 原 fsolve 非线性求解（保留备查）
+        % R_flow = dp_tube*1e6./(mdot_R.^R_coef);
+        % u = fsolve(@(u)uF(u,R_flow,N,mdot0,R_coef),u0,options);
+        % mdot_R = mdot0 + N*u;
+        % u0 = u;
 
         % 环路压降收敛判断
         %     if max(abs((dp_tube')*N)) < 1e-6
@@ -203,6 +214,10 @@ for i1 = 1:loopmax
 
         residual_history(i1) = residual_max;
         dp_loop_history(i1) = max(abs((dp_tube')*N));
+        % 收敛准则为环路压降最大差异小于1Pa &&
+        % 前后两次计算的值的相对误差<residual_limit,所有值统一阈值限，包含空气侧的温度、压力、工质侧的焓、压力
+        % 内部如果报了压降不收敛和能量守恒计算不收敛时，认为后续计算均错误
+        % 内部能量守恒计算和压降计算的守恒性是需要保证的，这个直接根据不动点迭代是否收敛进行判断，在此基础上才是外层迭代的准确性
         if max(abs((dp_tube')*N)) < 1e-6 && (residual_max < residual_limit)
             disp("压降收敛")
             break
@@ -232,8 +247,6 @@ dp_tube = (R_flow).*(mdot0 + N*u).^R_coef;
 dp_loop = (dp_tube')*N;
 F = dp_loop;
 end
-
-
 
 function  F = alg(x0,BD,InletBD,GeoCondition,CV,N,solver_flag,Prop_handle)
 % 迭代上限
