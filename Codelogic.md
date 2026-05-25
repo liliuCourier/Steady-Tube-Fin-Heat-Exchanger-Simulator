@@ -6,6 +6,7 @@
 Program_1_AI/
 ├── PreProcessing.m              ← 入口1: 预处理（流路/几何/边界）
 ├── Main.m                       ← 入口2: 稳态求解
+├── Main_loop_base.m              ← 入口2b: 两阶段环路优先求解器
 ├── PostProcessing.m             ← 入口3: 后处理（自动触发）
 ├── readme.md
 ├── .gitignore
@@ -108,6 +109,54 @@ Main
 | `uF` | `function F = uF(u, R_flow, N, mdot0)` | 环路基向量 F(u) = (dp_tube)' × N，供 fsolve 求解流量重分配 |
 
 **依赖路径：** `Lib/` `Solver/` `PostProcessing/` `PreProc/`
+
+---
+
+### Main_loop_base.m（脚本 + 4 个嵌套子函数）
+
+**职责：** 两阶段环路优先求解器，旨在通过 Phase1 快速稳定流量分布来减少总迭代数。
+
+**策略：**
+
+```
+Phase 1: 恒压热力扫描 + 流量更新（不更新压力场）
+  ├─ 全局饱和物性缓存 sat_global（p = p_R_inlet，所有 CV/迭代共用）
+  ├─ scanTubes_phase1（仅热力扫描，提取压阻 dp_CV）
+  ├─ Newton 流量更新（同 Main）
+  └─ 步出判据：前后两次流量相对变化 < 1e-1
+       ↓
+Phase 2: 完整热力+压力+流量更新（与 Main 完全一致）
+  ├─ scanTubes(solver_flag=1)  热力扫描
+  ├─ scanTubes(solver_flag=2)  压力扫描
+  ├─ Newton 流量更新
+  └─ 收敛判据：同 Main
+```
+
+**嵌套子函数：**
+
+| 函数 | 签名 | 职责 |
+|------|------|------|
+| `scanTubes_phase1` | `function [..., R_flow, dp_tube, residual_max] = scanTubes_phase1(paths, ..., sat_global)` | Phase1 专用：仅热力扫描 + 提取各 CV 压阻，压力场不变，全局饱和缓存 |
+| `alg_phase1` | `function [F, dp_CV, cache_R_out, cache_MA_out] = alg_phase1(x0, BD, ..., sat_global)` | 与 `alg(solver_flag=1)` 等价，额外返回 dp_CV (Pa)，复用 sat_global |
+| `scanTubes` | 同 Main.m | Phase2 使用，与 Main 完全一致 |
+| `alg` | 同 Main.m | Phase2 使用，带入口缓存转发（无 sat_global） |
+
+**与 Main.m 的关键差异：**
+
+| 特性 | Main | Main_loop_base Phase1 |
+|------|------|----------------------|
+| 压力场 | 每轮迭代更新 | 全程恒定 = p_R_inlet |
+| 饱和物性 | 每 CV 独立计算 (p_out) | 全局缓存 (p_inlet)，9 项 |
+| 扫描内容 | 热力 + 压力（2 次 scanTubes/iter） | 仅热力（1 次 scanTubes_phase1/iter） |
+| 缓存转发 | 跨 CV 入口/出口（热力扫描） | sat_global + 跨 CV 入口/出口 |
+
+**性能分析（16 管 4 环路，2026-05-25）：**
+
+Phase1 理论优势（省压力扫描）被两个因素抵消：
+1. 流量稳定需额外热力扫描迭代（当前 case: 2 次 Phase1 + 1 次 Phase2 vs Main 的 4 次迭代，但 Main 每次含热力+压力两次扫描，总扫描次数相当）
+2. Phase1 步出判据 `delta_mdot < 1e-1` 偏松，过早退出后 Phase2 仍需实质修正
+
+**结论**：精度无损失（偏差 < 0.05%），但速度未改善（+7%）。下一步研究方向：收紧 Phase1 步出阈值、自适应 Phase1/Phase2 切换。
 
 ---
 
