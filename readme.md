@@ -170,41 +170,48 @@ Cavallini-Zecchin 两相公式与 Gnielinski 单相公式在干度 x=0 和 x=1 �
 
 两个条件分别对应并联支路压力平衡和全场迭代稳定。有环路时两者都需满足；无环路时压降判据自动跳过（`N` 为空，`dp_loop_history=0`），仅判断 `residual_max < 1e-3`。
 
-#### 流量更新 — 显式线性化
+#### 流量更新 — 自写 Newton 迭代
 
-环路流量重分配原采用 `fsolve`（Levenberg-Marquardt）求解非线性压阻方程组，每轮需多次调用 `uF` 函数。改为显式线性化（单步 Newton 步）。
+环路流量重分配原采用 `fsolve`（Levenberg-Marquardt）求解 `N'·(R·m^e) = 0`。改为自写 Newton 迭代——解析 Jacobian，手动 2-3 步收敛，远比 fsolve 轻量。
 
-**为什么能这样做？**
+**为什么自写 Newton 比 fsolve 快得多？**
 
-压阻方程 `Δp = R · m^e`（e = 1.81）是指数形式，严格说应是非线性求解。但外层迭代框架提供了关键的近似条件：
+fsolve 是通用非线性求解器，为最坏情况设计了大量保护机制；自写 Newton 利用了问题的全部特殊结构：
 
-1. **外层迭代逐步逼近**：每次外层迭代后，热力场和压力场已被重新扫描，压阻系数 `R` 随之更新。下一次流量更新时，`R` 已是基于最新场量的值——这意味着流量调整只需「修正」当前解的偏差，而非从零求解。
+1. **解析 Jacobian vs 有限差分**：fsolve 默认用有限差分估算 Jacobian——4 个未知数，每轮至少额外调用 4 次 `uF` 函数。我们的 `J = N'·diag(e·R·m^(e-1))·N` 直接由公式给出，0 次额外调用。
 
-2. **环路数极少**：16 管场景下环路数仅 4，自由度低。Newton 法的收敛半径在低维问题中较大，单步线性化足以捕获大部分修正量。
+2. **无黑盒开销**：fsolve 每次调用 `uF(u)` 走函数句柄 → 输入验证 → 内部计算 `dp_tube'*N` 等。自写 Newton 将 `F` 和 `J` 的计算直接内联在循环里，省去全部函调开销。
 
-3. **线性化误差由外层迭代消化**：单步 Newton 给出的 `Δu` 不会精确满足 `N'·Δp = 0`（忽略了高阶项 `O(Δu²)`），但下一轮外层迭代会重新计算 `R_flow` 和 `dp_tube`，为流量提供新的修正。实质是把非线性求解分摊到了多层迭代中——线性化 + 外层迭代 = 隐式的 Newton 迭代。
+3. **无过度保护**：fsolve 内置信赖域管理、线搜索、步长阻尼、收敛监控——对病态大系统必要，但对 4×4 对称正定、从 `u0` 出发 2 步收敛的问题纯属浪费。
 
-4. **压阻关系接近线性**：e = 1.81，`m^1.81` 在工作点附近的曲率不大。一阶 Taylor 展开 `m^e ≈ m₀^e + e·m₀^(e-1)·Δm` 在典型流量变化范围（±20%）内的截断误差 < 5%。
+4. **问题结构完全透明**：`N` 是常数（仅取决于流路拓扑），`S > 0`（压降灵敏度恒正），`J` 天生对称正定。fsolve 不知道这些——它只能看到黑盒函数，用最保守的策略试探。
 
-综上：外层迭代提供了逐步修正的外壳，线性化在每步给出足够精确的增量，非线性残差由下一轮消化。实际验证收敛行为与 fsolve 一致（4 次外层迭代收敛）。
+**方法**
 
-**怎么做？**
-
-对环路流量约束 `N' · [R · (m₀ + N·u)^e] = 0` 在 `u0` 处线性化：
+R_flow 由当前 dp_tube 和 mdot_R 一次性确定，求解过程中保持不变。对 `N' · [R · (m₀ + N·u)^e] = 0` 执行 Newton 迭代：
 
 ```
-灵敏度:  S = d(dp)/dm = e · R · m^(e-1) = e · dp / m
-方程组:  N' · diag(S) · N · Δu = -N' · dp
+for k = 1:10
+    m_k = m0 + N·u                         ← 当前流量
+    F   = N'·(R · m_k^e)                   ← 环路残差
+    S   = e · R · m_k^(e-1)                ← 灵敏度 d(dp)/dm
+    J   = N'·diag(S)·N                     ← Jacobian (对称正定)
+    du  = -J \ F                           ← Newton 步
+    u   = u + du
+    if |du| < 1e-8: break
+end
 ```
 
-矩阵 `A = N'·diag(S)·N` 为 n_loops × n_loops 对称正定（由 `N'XN` 二次型保证），`A\b` 直接求解。
+通常 2-3 步收敛至机器精度。
 
-| 项目 | fsolve | 显式线性化 |
-|------|--------|-----------|
-| 方法 | Levenberg-Marquardt 迭代 | A\b 直接法 |
-| uF 调用 | 3-8 次/外层迭代 | 0 |
+| 项目 | fsolve | 自写 Newton |
+|------|--------|-------------|
+| Jacobian | 有限差分（每轮 +4 次 uF） | 解析式（0 次 uF） |
+| 函调开销 | 函数句柄 + 输入验证 | 内联计算 |
+| 保护机制 | 信赖域/线搜索/步长阻尼 | 无需 |
+| uF 调用 | 3-8 × (1+4) = 15-40 次/外层迭代 | 0 |
 | 矩阵规模 | — | 4×4（4 环路） |
-| 代码位置 | `Main.m:191-194`（注释保留） | `Main.m:190-197` |
+| 代码位置 | `Main.m`（注释保留） | `Main.m:190-204` |
 
 ### 注意事项
 
@@ -428,41 +435,48 @@ Inner convergence is the foundation: if any CV's fixed-point iteration fails ("�
 
 These correspond to parallel-branch pressure balance and global field stationarity. With loops, both must hold; without loops, the pressure criterion is automatically skipped (`N` empty, `dp_loop_history=0`).
 
-#### Flow Update — Explicit Linearization
+#### Flow Update — Custom Newton Iteration
 
-Loop mass flow redistribution originally used `fsolve` (Levenberg-Marquardt) to solve the nonlinear resistance equations. Replaced with explicit linearization (single Newton step).
+Loop mass flow redistribution originally used `fsolve` (Levenberg-Marquardt) to solve `N'·(R·m^e) = 0`. Replaced with a custom Newton iteration — analytic Jacobian, 2-3 steps to convergence, far lighter than fsolve.
 
-**Why it works**
+**Why custom Newton is much faster than fsolve**
 
-The resistance law `Δp = R · m^e` (e = 1.81) is nonlinear, but the outer iteration framework provides the key enabling conditions:
+fsolve is a general-purpose solver designed for worst-case scenarios; the custom Newton exploits every special property of this problem:
 
-1. **Outer iteration progressively refines**: After each outer iteration, the heat and pressure fields are re-scanned, updating the resistance coefficient `R`. The next flow update only needs to *correct* the current deviation — not solve from scratch.
+1. **Analytic Jacobian vs finite differences**: fsolve defaults to finite-difference Jacobian estimation — with 4 unknowns, at least 4 extra `uF` calls per iteration. Our `J = N'·diag(e·R·m^(e-1))·N` is a direct formula: 0 extra calls.
 
-2. **Low loop count**: With only 4 loops for 16 tubes, the system has very few degrees of freedom. Newton's method has a larger convergence radius in low dimensions — a single linearization captures most of the correction.
+2. **No black-box overhead**: fsolve wraps every `uF(u)` call through function handles → input validation → internal `dp_tube'*N` computation. The custom Newton inlines `F` and `J` directly — zero function-call overhead.
 
-3. **Linearization error absorbed by outer iteration**: A single Newton step does not exactly satisfy `N'·Δp = 0` (higher-order terms `O(Δu²)` are dropped). But the next outer iteration recomputes `R_flow` and `dp_tube`, providing a fresh correction. The net effect: linearization + outer iteration = implicit Newton iteration, with nonlinearity distributed across layers.
+3. **No over-protection**: fsolve includes trust-region management, line search, step damping, and convergence monitoring — necessary for ill-conditioned large systems, pure waste for a 4×4 SPD problem converging in 2 steps from `u0`.
 
-4. **Near-linear resistance law**: e = 1.81. Over typical flow changes (±20%), the truncation error of `m^e ≈ m₀^e + e·m₀^(e-1)·Δm` is < 5% — well within outer iteration tolerance.
-
-In practice, convergence behavior matches fsolve (4 outer iterations to converge).
+4. **Fully transparent problem structure**: `N` is constant (depends only on circuit topology), `S > 0` (pressure sensitivity always positive), `J` is inherently SPD. fsolve sees none of this — it treats the system as a black box and probes cautiously.
 
 **Method**
 
-Linearize `N' · [R · (m₀ + N·u)^e] = 0` at u0:
+R_flow is computed once from current dp_tube and mdot_R, held constant during the solve. Newton iteration on `N' · [R · (m₀ + N·u)^e] = 0`:
 
 ```
-Sensitivity:  S = d(dp)/dm = e · R · m^(e-1) = e · dp / m
-Linear system:  N' · diag(S) · N · Δu = -N' · dp
+for k = 1:10
+    m_k = m0 + N·u                         ← current flow
+    F   = N'·(R · m_k^e)                   ← loop residual
+    S   = e · R · m_k^(e-1)                ← sensitivity d(dp)/dm
+    J   = N'·diag(S)·N                     ← Jacobian (SPD)
+    du  = -J \ F                           ← Newton step
+    u   = u + du
+    if |du| < 1e-8: break
+end
 ```
 
-Matrix `A = N'·diag(S)·N` is n_loops × n_loops, symmetric positive-definite (guaranteed by the `N'XN` quadratic form). Solved directly via `A\b`.
+Typically converges to machine precision in 2-3 steps.
 
-| Method | fsolve | Explicit linearization |
-|--------|--------|----------------------|
-| Solver | Levenberg-Marquardt iterative | A\b direct |
-| uF calls | 3-8 per outer iteration | 0 |
+| Item | fsolve | Custom Newton |
+|------|--------|---------------|
+| Jacobian | Finite diff (+4 uF/iter) | Analytic (0 uF) |
+| Call overhead | Handle + validation | Inlined |
+| Safeguards | Trust-region/line-search/damping | None needed |
+| uF calls | 3-8 × (1+4) = 15-40 per outer iter | 0 |
 | Matrix size | — | 4×4 (4 loops) |
-| Code | `Main.m:191-194` (commented out) | `Main.m:190-197` |
+| Code | `Main.m` (commented out) | `Main.m:190-204` |
 
 ### Important Notes
 
