@@ -143,6 +143,42 @@ Cavallini-Zecchin 两相公式与 Gnielinski 单相公式在干度 x=0 和 x=1 �
 2. **速度未改善**：Phase1 虽省去压力扫描，但多了流量稳定所需的额外热力扫描迭代（2 次），且 Phase2 仍需至少 1 次完整迭代。总体扫描操作数相近，缓存优势被额外迭代抵消。
 3. **待研究**：Phase1 步出判据 `delta_mdot < 1e-1`（10%）过松，导致 Phase1 过早退出、Phase2 接管后仍需大量修正。收紧阈值是否能减少总迭代数、能否自适应切换 Phase1/Phase2 权重是下一步研究方向。
 
+#### D. 深入计时分析 (2026-05-25 晚)
+
+**5 次平均统计：**
+
+| | Main | Main_loop_base |
+|------|------|---------------|
+| 均值 | 0.282 s | 0.300 s (+6.3%) |
+| 标准差 | 0.032 s | **0.063 s** (2x) |
+| 最快 | 0.247 s | **0.226 s** (−9%) |
+| 最慢 | 0.330 s | 0.361 s |
+
+**Profiler 函数调用对比：**
+
+| 函数 | Main | Main_loop_base | 说明 |
+|------|------|---------------|------|
+| `alg` 调用 | 1,280 | 1,440 (+12.5%) | Phase1 的 alg_phase1 (480) + Phase2 的 alg (960) |
+| `R_cal_10` | 3,556 | 3,643 (+2.4%) | CV 内不动点迭代次数更多 |
+| `Prop1` | 4,885 | 4,700 (−3.8%) | sat_global 省了部分物性调用 |
+| `scanTubes` | 8 次 | 9 次 (3+6) | 总扫描次数反而更多 |
+
+**根因分析：**
+
+1. **Profiler 扰动**：Profiler 自身 ~10x 开销且改变了收敛行为（无 profiler 时 Phase1=2+Phase2=1，profiler 下 Phase1=3+Phase2=3），绝对时间不可比但调用分布有参考价值。
+2. **主因**：loop_base 虽然省了 3 次慢速压力扫描（无 sat_cache，需完整 REFPROP 插值），但 Phase1 为了稳定流量多跑了热力扫描迭代。在当前 16 管小规模下，收益和开销同级（各 ~0.02-0.05s），互相抵消。
+3. **方差问题**：loop_base 标准差是 Main 的 2 倍，Phase1 的收敛行为不稳定。运气好时 Phase1 提供好初值→Phase2 秒收敛（最快 0.226s，比 Main 最快快 9%）；运气差时 Phase1 白跑→Phase2 从头修正。
+4. **结论**：当前 case 规模太小，测不出两阶段策略的真实价值。需更大算例来验证。
+
+#### E. runSolver 批处理工具
+
+新增 `runSolver.m` — 精简求解脚本，无后处理，支持两种模式：
+```matlab
+mode = 'main';      runSolver;  out = solver_out;
+mode = 'loopbase';  runSolver;  out = solver_out;
+```
+输出 `solver_out` 结构体包含 Q_total, dp_total, time, n_iter, mdot_R 等，适合批量参数扫描和多次计时。
+
 ### 仿真流程
 
 1. 运行 `PreProcessing` 完成三类预处理：
