@@ -521,12 +521,7 @@ else
     inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
 end
 
-sat_cache = cell(1,9);
-sat_cache{1} = sat_in{1}; sat_cache{2} = sat_in{2};
-sat_cache{3} = sat_in{3}; sat_cache{4} = sat_in{4};
-sat_cache{5} = sat_in{5}; sat_cache{6} = sat_in{6};
-sat_cache{7} = sat_in{7}; sat_cache{8} = sat_in{8};
-sat_cache{9} = Prop_handle.T_liq(0, BD(1));
+sat_cache = sat_global;  % Phase1 压力不变，入口=出口饱和物性
 
 for i = 1:loopmax
     out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props,sat_cache);
