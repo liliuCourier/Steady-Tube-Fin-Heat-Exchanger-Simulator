@@ -1,4 +1,4 @@
-function out = DryA_cal_10(x0,BD_MA,GeoCondition,CV_num,N1,Prop_handle)
+function out = DryA_cal_10(x0,BD_MA,GeoCondition,CV_num,N1,Prop_handle,inlet_air_props)
 % 取出必要的集合条件，由于翅片的存在，需要的几何条件特别多
 D_outer =   GeoCondition.D_outer;       % 管外径
 L =         GeoCondition.L;             % 管长
@@ -36,17 +36,27 @@ Tout =          x0(1);
 pout =          x0(2);
 
 %% 计算中间变量，以及必要的物性计算
-% 获取空气的进出口焓
-h_air_in =      hair(Tin);              % J/kg      空气进口焓
-h_air_out =     hair(Tout);             % J/kg      空气出口焓
-Pr_air_in =     Prair(Tin);             % 1         空气进口Pr数
-Pr_air_out =    Prair(Tout);            % 1         空气出口Pr数
-vis_air_in =    visair(Tin);            % Pa        空气进口动力粘度
-vis_air_out =   visair(Tout);           % Pa        空气出口动力粘度
-k_air_in =      kair(Tin);              % W/m K     空气进口导热系数
-k_air_out =     kair(Tout);             % W/m K     空气出口导热系数
-cp_air_in =      cpair(Tin);            % J/kg K    空气进口比热
-cp_air_out =     cpair(Tout);           % J/kg K    空气出口比热
+% 空气物性（入口优先使用缓存，避免重复插值查询）
+if nargin >= 7 && ~isempty(inlet_air_props)
+    h_air_in   = inlet_air_props{1};
+    Pr_air_in  = inlet_air_props{2};
+    vis_air_in = inlet_air_props{3};
+    k_air_in   = inlet_air_props{4};
+    cp_air_in  = inlet_air_props{5};
+    vin        = inlet_air_props{6};
+else
+    h_air_in   = hair(Tin);
+    Pr_air_in  = Prair(Tin);
+    vis_air_in = visair(Tin);
+    k_air_in   = kair(Tin);
+    cp_air_in  = cpair(Tin);
+    vin        = Ra*Tin./(pin*1e6);
+end
+h_air_out  = hair(Tout);
+Pr_air_out = Prair(Tout);
+vis_air_out = visair(Tout);
+k_air_out  = kair(Tout);
+cp_air_out = cpair(Tout);
 
 
 
@@ -60,9 +70,8 @@ vis_CV =        (vis_air_in + vis_air_out)/2;
 k_CV   =        (k_air_in + k_air_out)/2;
 cp_CV   =       (cp_air_in + cp_air_out)/2;
 
-% 进出口的总焓
-vin =   Ra*Tin./(pin*1e6);                              % m^3/kg    控制体进口比容，采用理想气体方程计算
-vout =   Ra*Tout./(pout*1e6);
+% 出口比容
+vout = Ra*Tout./(pout*1e6);
 
 %% Correlation area关联式区域
 A_total = L_fin*L;                                                  % m^2   在发生截面收缩之前的总通流面积

@@ -311,6 +311,14 @@ if solver_flag == 1
     % inlet property cache: inlet p/h unchanged during fixed-point iteration
     inlet_props = cell(1,14);
     [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle);
+    Ra = 287.047;
+    inlet_air_props = cell(1,6);
+    inlet_air_props{1} = Prop_handle.hair(T_MA_inlet);
+    inlet_air_props{2} = Prop_handle.Prair(T_MA_inlet);
+    inlet_air_props{3} = Prop_handle.visair(T_MA_inlet);
+    inlet_air_props{4} = Prop_handle.kair(T_MA_inlet);
+    inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
+    inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
 
     for i = 1:loopmax
         out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props);
@@ -322,7 +330,7 @@ if solver_flag == 1
         dEF_R        = out{5};
         T_R          = out{6};
 
-        out_MA = DryA_cal_10(x0_MA,BD_MA,GeoCondition,CV,N,Prop_handle);
+        out_MA = DryA_cal_10(x0_MA,BD_MA,GeoCondition,CV,N,Prop_handle,inlet_air_props);
 
         dEF_MA =    out_MA{1};
         n_fin =     out_MA{2};
@@ -357,13 +365,21 @@ elseif solver_flag == 2
     % inlet property cache: inlet p/h unchanged during fixed-point iteration
     inlet_props = cell(1,14);
     [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle);
+    Ra = 287.047;
+    inlet_air_props = cell(1,6);
+    inlet_air_props{1} = Prop_handle.hair(T_MA_inlet);
+    inlet_air_props{2} = Prop_handle.Prair(T_MA_inlet);
+    inlet_air_props{3} = Prop_handle.visair(T_MA_inlet);
+    inlet_air_props{4} = Prop_handle.kair(T_MA_inlet);
+    inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
+    inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
 
     for i = 1:loopmax
 
         out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props);
         dp_R        = out{4};
 
-        out_MA = DryA_cal_10(x0_MA,BD_MA,GeoCondition,CV,N,Prop_handle);
+        out_MA = DryA_cal_10(x0_MA,BD_MA,GeoCondition,CV,N,Prop_handle,inlet_air_props);
 
         dp_MA =    out_MA{5};
         if max(abs([(dp_R - (p_R_inlet - x0_R(2))*1e6)/dp_R,(dp_MA - (p_MA_inlet - x0_MA(2))*1e6)/dp_MA]))<residual_dp && i<loopmax
