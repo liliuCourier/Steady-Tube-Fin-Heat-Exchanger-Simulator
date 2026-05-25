@@ -123,8 +123,18 @@ dp_f_CV =   (f_CV*L/CV_num).*(mdot.^2)./(2*D_CV*D_inner*S^2);    % Pa  摩擦压
 dp_v_CV =   16*mdot.^2/(pi^2*D_inner^4).*(1./Dout_CV - 1./Din_CV);   % Pa  速度压损
 dp =    (dp_f_CV + dp_v_CV);
 
-% 单相换热采用Gnielinski公式
-Nu_1P_CV = (f_CV/8.*max(Re_1P - 1000,0).*Pr_CV)./(1+12.7*sqrt(f_CV/8).*(Pr_CV.^(2/3)-1));
+% 单相换热 Gnielinski，层流-湍流 1000~1200 线性光滑过渡
+Re_low  = 1000;
+Re_high = 1200;
+Nu_gn = (f_CV/8.*(Re_1P - 1000).*Pr_CV)./(1+12.7*sqrt(f_CV/8).*(Pr_CV.^(2/3)-1));
+if Re_1P <= Re_low
+    Nu_1P_CV = 3.66;
+elseif Re_1P >= Re_high
+    Nu_1P_CV = Nu_gn;
+else
+    w = (Re_1P - Re_low) / (Re_high - Re_low);
+    Nu_1P_CV = 3.66 * (1 - w) + Nu_gn * w;
+end
 h_1P_CV = k_CV.*Nu_1P_CV/D_inner;
 
 Nu_2P_CV = 0.05*((Re_2P).^0.8).*Prsatliq_CV.^0.33;
@@ -140,6 +150,11 @@ h_mix_1 = h_1P_CV .* (1 - w) + h_2P_CV .* w;  % 线性混合（可改为 Hermite
 w2 = min(max((x_CV - (1 - transition_range)) / transition_range, 0), 1);
 h_R = h_mix_1 .* (1 - w2) + h_1P_CV .* w2;
 dEF = mdot.*(hin - hout);
+
+% if h_R == 0
+%     pause()
+% 
+% end
 
 %%
 out{1} = Tin_CV;
