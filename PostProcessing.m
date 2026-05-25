@@ -18,6 +18,34 @@ plotLoopBalance(N, R_flow, mdot0, mdot_R, dp_tube, u0, options);
 summaryTable(TCinf, GeoCondition, BDCondition, h_R_in, h_R_out, ...
     p_R_in, p_R_out, T_MA_in, T_MA_out, mdot_R, dp_tube, heatPaths, time, Prop_handle, N);
 
+%% 3.5 各管流量分布
+Tube_num = GeoCondition.Tube_num;
+row = GeoCondition.row;
+col = GeoCondition.col;
+
+figure('Name', '各管流量分布', 'NumberTitle', 'off');
+
+% 流量柱状图
+bar(1:Tube_num, mdot_R * 1000, 'FaceColor', [0.3 0.6 0.9], 'EdgeColor', 'k', 'LineWidth', 0.8);
+hold on;
+
+% 平均流量线
+mdot_avg = mean(mdot_R) * 1000;
+yline(mdot_avg, 'r--', sprintf('均值 %.2f g/s', mdot_avg), 'LineWidth', 1.2);
+
+xlabel('管号');
+ylabel('质量流量 (g/s)');
+title(sprintf('各管流量分配 (%d排×%d列, 共%d管)', row, col, Tube_num));
+grid on;
+
+% 每根管上标注数值
+for t = 1:Tube_num
+    text(t, mdot_R(t)*1000 + max(mdot_R)*15, ...
+        sprintf('%.2f', mdot_R(t)*1000), ...
+        'HorizontalAlignment', 'center', 'FontSize', 7, 'Color', [0.2 0.2 0.2]);
+end
+hold off;
+
 %% 4. 收敛历史
 % 修剪未使用的预分配
 residual_history(i1+1:end) = [];
