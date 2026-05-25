@@ -320,8 +320,9 @@ if solver_flag == 1
     inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
     inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
 
-    % saturation property cache: p_in~=p_out (dp~Pa), sat props depend only on p
-    sat_cache = cell(1,8);
+    % outlet saturation cache: p_out fixed during heat scan, reuse inlet sat
+    % (dp~Pa, sat props depend only on p, p_in~=p_out)
+    sat_cache = cell(1,9);
     sat_cache{1} = inlet_props{7};   % vsatliq
     sat_cache{2} = inlet_props{8};   % vsatvap
     sat_cache{3} = inlet_props{9};   % Prsatliq
@@ -329,7 +330,8 @@ if solver_flag == 1
     sat_cache{5} = inlet_props{11};  % Nusatliq
     sat_cache{6} = inlet_props{12};  % Nusatvap
     sat_cache{7} = inlet_props{13};  % ksatliq
-    sat_cache{8} = inlet_props{14}   % ksatvap
+    sat_cache{8} = inlet_props{14};  % ksatvap
+    sat_cache{9} = Prop_handle.T_liq(0, BD(1));  % Tsatliq at p_out
 
     for i = 1:loopmax
         out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props,sat_cache);

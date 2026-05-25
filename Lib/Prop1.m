@@ -1,4 +1,4 @@
-function [D,Pr,Nu,T,x,k,vsatliq,vsatvap,Prsatliq,Prsatvap,Nusatliq,Nusatvap,ksatliq,ksatvap] = Prop1(p,h,Prop_handle)
+function [D,Pr,Nu,T,x,k,vsatliq,vsatvap,Prsatliq,Prsatvap,Nusatliq,Nusatvap,ksatliq,ksatvap] = Prop1(p,h,Prop_handle,sat_props)
 
 h_sat_liq = Prop_handle.h_sat_liq;
 h_sat_vap = Prop_handle.h_sat_vap;
@@ -17,19 +17,27 @@ k_liq    = Prop_handle.k_liq;
 
 % 做成单输出模式，先检查相态
 
-% 饱和参数计算
+% 饱和参数计算（优先使用缓存，避免 8 次 REFPROP 插值）
 hsatliq = h_sat_liq(p);
 hsatvap = h_sat_vap(p);
 
-vsatliq = v_liq(0,p);
-vsatvap = v_vap(1,p);
-Prsatliq = Pr_liq(0,p);
-Prsatvap = Pr_vap(1,p);
-Nusatliq = Nu_liq(0,p);
-Nusatvap = Nu_vap(1,p);
-Tsatliq = T_liq(0,p);
-ksatliq = k_liq(0,p);
-ksatvap = k_vap(1,p);
+if nargin >= 4 && ~isempty(sat_props)
+    vsatliq = sat_props{1}; vsatvap = sat_props{2};
+    Prsatliq = sat_props{3}; Prsatvap = sat_props{4};
+    Nusatliq = sat_props{5}; Nusatvap = sat_props{6};
+    ksatliq = sat_props{7}; ksatvap = sat_props{8};
+    Tsatliq = sat_props{9};
+else
+    vsatliq = v_liq(0,p);
+    vsatvap = v_vap(1,p);
+    Prsatliq = Pr_liq(0,p);
+    Prsatvap = Pr_vap(1,p);
+    Nusatliq = Nu_liq(0,p);
+    Nusatvap = Nu_vap(1,p);
+    Tsatliq = T_liq(0,p);
+    ksatliq = k_liq(0,p);
+    ksatvap = k_vap(1,p);
+end
 
 if h < hsatliq
     hnorm = (h - hmin)/(hsatliq - hmin) - 1;

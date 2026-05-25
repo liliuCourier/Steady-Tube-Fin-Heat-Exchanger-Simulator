@@ -28,8 +28,13 @@ else
         vsatvap_in, Prsatliq_in, Prsatvap_in, Nusatliq_in, Nusatvap_in, ksatliq_in, ksatvap_in] = Prop1(pin,hin,Prop_handle);
 end
 
-[Dout_CV, Prout_CV, Nuout_CV, Tout_CV, xout_CV, kout_CV,vsatliq_out,...
-    vsatvap_out, Prsatliq_out, Prsatvap_out, Nusatliq_out, Nusatvap_out, ksatliq_out, ksatvap_out] = Prop1(pout,hout,Prop_handle);
+if nargin >= 8 && ~isempty(sat_cache)
+    [Dout_CV, Prout_CV, Nuout_CV, Tout_CV, xout_CV, kout_CV,vsatliq_out,...
+        vsatvap_out, Prsatliq_out, Prsatvap_out, Nusatliq_out, Nusatvap_out, ksatliq_out, ksatvap_out] = Prop1(pout,hout,Prop_handle,sat_cache);
+else
+    [Dout_CV, Prout_CV, Nuout_CV, Tout_CV, xout_CV, kout_CV,vsatliq_out,...
+        vsatvap_out, Prsatliq_out, Prsatvap_out, Nusatliq_out, Nusatvap_out, ksatliq_out, ksatvap_out] = Prop1(pout,hout,Prop_handle);
+end
 
 D_CV = (Din_CV + Dout_CV)/2;
 Pr_CV = (Prin_CV + Prout_CV)/2;
@@ -38,10 +43,14 @@ T_CV = (Tin_CV + Tout_CV)/2;
 x_CV = (xin_CV + xout_CV)/2;
 k_CV = (kin_CV + kout_CV)/2;
 if nargin >= 8 && ~isempty(sat_cache)
-    vsatliq_CV = sat_cache{1}; vsatvap_CV = sat_cache{2};
-    Prsatliq_CV = sat_cache{3}; Prsatvap_CV = sat_cache{4};
-    Nusatliq_CV = sat_cache{5}; Nusatvap_CV = sat_cache{6};
-    ksatliq_CV = sat_cache{7}; ksatvap_CV = sat_cache{8};
+    vsatliq_CV = (vsatliq_in + sat_cache{1})/2;
+    vsatvap_CV = (vsatvap_in + sat_cache{2})/2;
+    Prsatliq_CV = (Prsatliq_in + sat_cache{3})/2;
+    Prsatvap_CV = (Prsatvap_in + sat_cache{4})/2;
+    Nusatliq_CV = (Nusatliq_in + sat_cache{5})/2;
+    Nusatvap_CV = (Nusatvap_in + sat_cache{6})/2;
+    ksatliq_CV = (ksatliq_in + sat_cache{7})/2;
+    ksatvap_CV = (ksatvap_in + sat_cache{8})/2;
 else
     vsatliq_CV = (vsatliq_in + vsatliq_out)/2;
     vsatvap_CV = (vsatvap_in + vsatvap_out)/2;
