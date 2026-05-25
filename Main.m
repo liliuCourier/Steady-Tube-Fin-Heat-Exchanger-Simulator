@@ -127,7 +127,7 @@ for i1 = 1:loopmax
         h_R_in, h_R_out, T_MA_in, T_MA_out, ...
         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
         mdot_R, mdot_MA, TCinf, GeoCondition, ...
-        CV_num, row, 2, Prop_handle, ...
+        CV_num, row, 1, Prop_handle, ...
         h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
         residual_max, dp_tube);
     tube_cal = tube_cal + 1;
@@ -135,7 +135,7 @@ for i1 = 1:loopmax
     snapshot_p_out{tube_cal} = p_R_out;
     snapshot_mdot{tube_cal}  = mdot_R;
     snapshot_dp{tube_cal}    = dp_tube;
-    snapshot_flag(tube_cal)  = 2;
+    snapshot_flag(tube_cal)  = 1;
     snapshot_iter(tube_cal)  = i1;
 
     if isempty(N)
@@ -165,7 +165,7 @@ for i1 = 1:loopmax
     else
 
     % 再更新一次压力场
-    % for i2 = 1:loopmax
+    %for i2 = 1:loopmax
         [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
             dp_tube, residual_max] = scanTubes(...
@@ -173,7 +173,7 @@ for i1 = 1:loopmax
             h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
             mdot_R, mdot_MA, TCinf, GeoCondition, ...
-            CV_num, row, 1, Prop_handle, ...
+            CV_num, row, 2, Prop_handle, ...
             h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
             residual_max, dp_tube);
         tube_cal = tube_cal + 1;
@@ -181,7 +181,7 @@ for i1 = 1:loopmax
         snapshot_p_out{tube_cal} = p_R_out;
         snapshot_mdot{tube_cal}  = mdot_R;
         snapshot_dp{tube_cal}    = dp_tube;
-        snapshot_flag(tube_cal)  = 1;
+        snapshot_flag(tube_cal)  = 2;
         snapshot_iter(tube_cal)  = i1;
 
         % 第二次更新流量场
@@ -307,10 +307,13 @@ if solver_flag == 1
     
     x0_R =  [x0(1);BD(1)];
     x0_MA = [x0(2);BD(2)];
-    
+
+    % inlet property cache: inlet p/h unchanged during fixed-point iteration
+    inlet_props = cell(1,14);
+    [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle);
 
     for i = 1:loopmax
-        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[]);
+        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props);
 
         % 获得计算结果
         %Tin_R        = out{1};
@@ -351,9 +354,13 @@ elseif solver_flag == 2
     x0_R  = [BD(1);x0(1)];
     x0_MA = [BD(2);x0(2)];
 
+    % inlet property cache: inlet p/h unchanged during fixed-point iteration
+    inlet_props = cell(1,14);
+    [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle);
+
     for i = 1:loopmax
 
-        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[]);
+        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props);
         dp_R        = out{4};
 
         out_MA = DryA_cal_10(x0_MA,BD_MA,GeoCondition,CV,N,Prop_handle);

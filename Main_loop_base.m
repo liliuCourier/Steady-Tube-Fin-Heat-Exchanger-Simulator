@@ -107,23 +107,25 @@ for i1 = 1:loopmax
             break
         end
     else
-        % Phase 1: 用热力扫描中提取的压阻直接调节流量
-        u = fsolve(@(u)uF(u,R_flow,N,mdot0,R_coef),u0,options);
-        mdot_R = mdot0 + N*u;
+        % Phase 1: 显式压阻流量更新
+        % S = d(dp)/dm = e * dp / m  (线性化灵敏度)
+        S = R_coef * dp_tube ./ mdot_R;
+        % N'*diag(S)*N * Δu = -N'*dp
+        A = N' * (S .* N);   % 等价于 N'*diag(S)*N
+        b = -N' * dp_tube;
+        du = A \ b;
+        mdot_R = mdot0 + N * (u0 + du);
+        u0 = u0 + du;
 
         residual_history(i1) = residual_max;
-
-        % 用当前 R_flow 估算环路压降不平衡
-        dp_est  = R_flow .* (mdot_R .^ R_coef);
-        dp_loop = max(abs((dp_est')*N));
+        dp_loop = max(abs((dp_tube') * N));
         dp_loop_history(i1) = dp_loop;
 
-        % 流量稳定则步出 Phase 1，进入 Phase 2 精调
-        if max(abs(u - u0)./u0) < 1e-3
-            disp("Phase1 流量稳定，进入精调")
+        % 环路压降平衡则步出 Phase 1 (dp_tube 单位为 Pa)
+        if dp_loop < 1e-3
+            disp("Phase1 环路平衡，进入精调")
             break
         end
-        u0 = u;
     end
 end
 
@@ -174,11 +176,14 @@ if ~isempty(N)
         snapshot_flag(tube_cal)  = 1;
         snapshot_iter(tube_cal)  = i2;
 
-        % 流量重分配
-        R_flow = dp_tube*1e6./(mdot_R.^R_coef);
-        u = fsolve(@(u)uF(u,R_flow,N,mdot0,R_coef),u0,options);
-        mdot_R = mdot0 + N*u;
-        u0 = u;
+        % 流量重分配 — 显式线性化
+        dp_Pa = dp_tube * 1e6;   % dp_tube 来自压力扫描，单位为 MPa
+        S = R_coef * dp_Pa ./ mdot_R;
+        A = N' * (S .* N);
+        b = -N' * dp_Pa;
+        du = A \ b;
+        mdot_R = mdot0 + N * (u0 + du);
+        u0 = u0 + du;
 
         residual_history(i2) = residual_max;
         dp_loop_history(i2)   = max(abs((dp_tube')*N));
