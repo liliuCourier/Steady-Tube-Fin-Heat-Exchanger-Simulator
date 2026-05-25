@@ -320,8 +320,19 @@ if solver_flag == 1
     inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
     inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
 
+    % saturation property cache: p_in~=p_out (dp~Pa), sat props depend only on p
+    sat_cache = cell(1,8);
+    sat_cache{1} = inlet_props{7};   % vsatliq
+    sat_cache{2} = inlet_props{8};   % vsatvap
+    sat_cache{3} = inlet_props{9};   % Prsatliq
+    sat_cache{4} = inlet_props{10};  % Prsatvap
+    sat_cache{5} = inlet_props{11};  % Nusatliq
+    sat_cache{6} = inlet_props{12};  % Nusatvap
+    sat_cache{7} = inlet_props{13};  % ksatliq
+    sat_cache{8} = inlet_props{14}   % ksatvap
+
     for i = 1:loopmax
-        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props);
+        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props,sat_cache);
 
         % 获得计算结果
         %Tin_R        = out{1};

@@ -1,4 +1,4 @@
-function  out = R_cal_10(x0,BD_R,GeoCondition,CV_num,Prop_handle,flag,inlet_props)
+function  out = R_cal_10(x0,BD_R,GeoCondition,CV_num,Prop_handle,flag,inlet_props,sat_cache)
 L =         GeoCondition.L;                     % 单管长
 D_inner =   GeoCondition.D_inner;               % 管内径
 r =         GeoCondition.r;                     % 表面相对粗糙度
@@ -37,14 +37,21 @@ Nu_CV = (Nuin_CV + Nuout_CV)/2;
 T_CV = (Tin_CV + Tout_CV)/2;
 x_CV = (xin_CV + xout_CV)/2;
 k_CV = (kin_CV + kout_CV)/2;
-vsatliq_CV = (vsatliq_in + vsatliq_out)/2;
-vsatvap_CV = (vsatvap_in + vsatvap_out)/2;
-Prsatliq_CV = (Prsatliq_in + Prsatliq_out)/2;
-Prsatvap_CV = (Prsatvap_in + Prsatvap_out)/2;
-Nusatliq_CV = (Nusatliq_in + Nusatliq_out)/2;
-Nusatvap_CV = (Nusatvap_in + Nusatvap_out)/2;
-ksatliq_CV = (ksatliq_in + ksatliq_out)/2;
-ksatvap_CV = (ksatvap_in + ksatvap_out)/2;
+if nargin >= 8 && ~isempty(sat_cache)
+    vsatliq_CV = sat_cache{1}; vsatvap_CV = sat_cache{2};
+    Prsatliq_CV = sat_cache{3}; Prsatvap_CV = sat_cache{4};
+    Nusatliq_CV = sat_cache{5}; Nusatvap_CV = sat_cache{6};
+    ksatliq_CV = sat_cache{7}; ksatvap_CV = sat_cache{8};
+else
+    vsatliq_CV = (vsatliq_in + vsatliq_out)/2;
+    vsatvap_CV = (vsatvap_in + vsatvap_out)/2;
+    Prsatliq_CV = (Prsatliq_in + Prsatliq_out)/2;
+    Prsatvap_CV = (Prsatvap_in + Prsatvap_out)/2;
+    Nusatliq_CV = (Nusatliq_in + Nusatliq_out)/2;
+    Nusatvap_CV = (Nusatvap_in + Nusatvap_out)/2;
+    ksatliq_CV = (ksatliq_in + ksatliq_out)/2;
+    ksatvap_CV = (ksatvap_in + ksatvap_out)/2;
+end
 
 % 计算流速
 veloctiy_CV = (mdot/D_CV)/S;
