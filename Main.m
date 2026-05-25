@@ -187,23 +187,27 @@ for i1 = 1:loopmax
         snapshot_flag(tube_cal)  = 2;
         snapshot_iter(tube_cal)  = i1;
 
-        % 第二次更新流量场 — 显式线性化（单步 Newton）
-        % 非线性原式: dp = R·m^e, 环路平衡 N'·dp = 0
-        % 线性化: d(dp)/dm = e·dp/m → N'·diag(e·dp/m)·N·Δu = -N'·dp
-        dp_Pa = dp_tube * 1e6;                     % MPa → Pa
-        S = R_coef * dp_Pa ./ mdot_R;               % 灵敏度
-        A_mat = N' * (S .* N);                      % 环路矩阵 (对称正定)
-        b_vec = -N' * dp_Pa;                        % 环路不平衡量
-        du = A_mat \ b_vec;                         % 直接求解
-        mdot_R = mdot0 + N * (u0 + du);
-        u0 = u0 + du;
+        % 第二次更新流量场 — Newton 迭代求解 N'·(R·m^e) = 0
+        % R_flow 由当前 dp_tube 和 mdot_R 确定，求解过程中保持不变
+        dp_Pa = dp_tube * 1e6;
+        R_flow = dp_Pa ./ (mdot_R.^R_coef);
+        u = u0;
+        for k = 1:10
+            m_k   = mdot0 + N * u;
+            F     = N' * (R_flow .* m_k.^R_coef);          % 环路残差
+            S     = R_coef * R_flow .* m_k.^(R_coef - 1);  % 灵敏度 d(dp)/dm
+            J     = N' * (S .* N);                          % Jacobian
+            du    = -J \ F;
+            u     = u + du;
+            if norm(du) < 1e-8, break; end
+        end
+        mdot_R = mdot0 + N * u;
+        u0 = u;
         u0_history{i1+1} = u0;
 
         % 原 fsolve 非线性求解（保留备查）
-        % R_flow = dp_tube*1e6./(mdot_R.^R_coef);
         % u = fsolve(@(u)uF(u,R_flow,N,mdot0,R_coef),u0,options);
         % mdot_R = mdot0 + N*u;
-        % u0 = u;
 
         % 环路压降收敛判断
         %     if max(abs((dp_tube')*N)) < 1e-6
