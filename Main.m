@@ -104,6 +104,10 @@ iter_p_out = cell(loopmax, 1);
 iter_mdot  = cell(loopmax, 1);
 iter_dp    = cell(loopmax, 1);
 
+% 流量分配演进记录（u0 为环路流量解）
+u0_history = cell(loopmax+1, 1);
+u0_history{1} = u0;
+
 tic
 for i1 = 1:loopmax
     % 记录迭代级场量快照（本次迭代的出发点）
@@ -188,6 +192,7 @@ for i1 = 1:loopmax
         u = fsolve(@(u)uF(u,R_flow,N,mdot0,R_coef),u0,options);
         mdot_R = mdot0 + N*u;
         u0 = u;
+        u0_history{i1+1} = u0;
 
         % 环路压降收敛判断
         %     if max(abs((dp_tube')*N)) < 1e-6

@@ -46,6 +46,48 @@ for t = 1:Tube_num
 end
 hold off;
 
+%% 3.6 流量分配演进（u0 环路流量解）
+has_loops = ~isempty(N) && size(N,2) > 0;
+if has_loops && exist('u0_history','var')
+    n_iter = find(~cellfun(@isempty, u0_history), 1, 'last') - 1;
+    if n_iter > 0
+        u0_history = u0_history(1:n_iter+1);
+
+        figure('Name', '流量分配演进', 'NumberTitle', 'off');
+
+        % 从 u0 反算 mdot_R
+        n_tubes = length(mdot0);
+        mdot_evo = zeros(n_tubes, n_iter+1);
+        for k = 1:n_iter+1
+            mdot_evo(:,k) = mdot0 + N * u0_history{k};
+        end
+
+        % 各管流量随迭代变化
+        colors = lines(n_tubes);
+        for t = 1:n_tubes
+            plot(0:n_iter, mdot_evo(t,:)*1000, 'o-', ...
+                'Color', colors(t,:), 'LineWidth', 1.2, 'MarkerSize', 6);
+            hold on;
+        end
+        xlabel('迭代次数');
+        ylabel('质量流量 (g/s)');
+        title(sprintf('各管流量分配演进 (%d管, %d次迭代)', n_tubes, n_iter));
+        grid on;
+
+        % 图例
+        leg_str = arrayfun(@(t) sprintf('管%d', t), 1:n_tubes, 'UniformOutput', false);
+        legend(leg_str, 'Location', 'bestoutside', 'FontSize', 7);
+        hold off;
+    end
+else
+    % 无环路：单次流量柱状图
+    figure('Name', '流量分配 (无环路)', 'NumberTitle', 'off');
+    bar(1:length(mdot_R), mdot_R * 1000, 'FaceColor', [0.3 0.6 0.9]);
+    xlabel('管号'); ylabel('质量流量 (g/s)');
+    title('各管流量分配 (无环路，固定流量)');
+    grid on;
+end
+
 %% 4. 收敛历史
 % 修剪未使用的预分配
 residual_history(i1+1:end) = [];
