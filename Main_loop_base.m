@@ -1,6 +1,6 @@
-% Main_loop_base — 环路优先求解器
-% 热力扫描中提取各控制体压阻信息，外层直接代数调节流量
-% 仅最后一次迭代进行完整压力场更新
+% Main_loop_base — 环路优先求解器 (Demo1.12 同步)
+% Phase1: 仅热力扫描 + 提取压阻 + 流量更新，迭代至流量稳定
+% Phase2: 完整热力+压力+流量重分配，与 Main 一致
 % 运行前请先执行 PreProcessing
 
 root = fileparts(mfilename('fullpath'));
@@ -71,67 +71,75 @@ iter_p_out = cell(loopmax, 1);
 iter_mdot  = cell(loopmax, 1);
 iter_dp    = cell(loopmax, 1);
 
-%% Phase 1: 粗调 — 热力扫描提取压阻并更新压力场，直接调节流量至稳定
+% 流量分配演进记录
+u0_history = cell(loopmax+1, 1);
+u0_history{1} = u0;
+
+has_loops = ~isempty(N) && size(N,2) > 0;
+
+%% Phase 1: 仅热力扫描 + 提取压阻，迭代至流量稳定
 tic
-for i1 = 1:loopmax
-    iter_h_out{i1} = h_R_out;
-    iter_p_out{i1} = p_R_out;
-    iter_mdot{i1}  = mdot_R;
-    iter_dp{i1}    = dp_tube;
+if has_loops
+    for i1 = 1:loopmax
+        iter_h_out{i1} = h_R_out;
+        iter_p_out{i1} = p_R_out;
+        iter_mdot{i1}  = mdot_R;
+        iter_dp{i1}    = dp_tube;
 
-    % —— 热力扫描（同步提取各 CV 压阻） ——
-    residual_max = 0;
-    [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
-     p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-     R_flow, dp_tube, residual_max] = scanTubes_loop(...
-        heatPaths, predecessors_in, ...
-        h_R_in, h_R_out, T_MA_in, T_MA_out, ...
-        p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-        mdot_R, mdot_MA, TCinf, GeoCondition, ...
-        CV_num, row, Prop_handle, ...
-        h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
-        residual_max, R_coef);
-    tube_cal = tube_cal + 1;
-    snapshot_h_out{tube_cal} = h_R_out;
-    snapshot_p_out{tube_cal} = p_R_out;
-    snapshot_mdot{tube_cal}  = mdot_R;
-    snapshot_dp{tube_cal}    = dp_tube;
-    snapshot_flag(tube_cal)  = 1;
-    snapshot_iter(tube_cal)  = i1;
+        % 热力扫描（同步提取各 CV 压阻，更新压力场）
+        residual_max = 0;
+        [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+         R_flow, dp_tube, residual_max] = scanTubes_phase1(...
+            heatPaths, predecessors_in, ...
+            h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+            p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+            mdot_R, mdot_MA, TCinf, GeoCondition, ...
+            CV_num, row, Prop_handle, ...
+            h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
+            residual_max, R_coef);
+        tube_cal = tube_cal + 1;
+        snapshot_h_out{tube_cal} = h_R_out;
+        snapshot_p_out{tube_cal} = p_R_out;
+        snapshot_mdot{tube_cal}  = mdot_R;
+        snapshot_dp{tube_cal}    = dp_tube;
+        snapshot_flag(tube_cal)  = 1;
+        snapshot_iter(tube_cal)  = i1;
 
-    if isempty(N)
-        residual_history(i1) = residual_max;
-        dp_loop_history(i1)   = 0;
-        if residual_max < residual_limit
-            disp("残差收敛")
-            break
+        % 流量更新 — Newton 迭代
+        dp_Pa = dp_tube;
+        R_flow_coef = dp_Pa ./ (mdot_R.^R_coef);
+        u = u0;
+        for k = 1:10
+            m_k   = mdot0 + N * u;
+            F     = N' * (R_flow_coef .* m_k.^R_coef);
+            S     = R_coef * R_flow_coef .* m_k.^(R_coef - 1);
+            J     = N' * (S .* N);
+            du    = -J \ F;
+            u     = u + du;
+            if norm(du) < 1e-8, break; end
         end
-    else
-        % Phase 1: 显式压阻流量更新
-        % S = d(dp)/dm = e * dp / m  (线性化灵敏度)
-        S = R_coef * dp_tube ./ mdot_R;
-        % N'*diag(S)*N * Δu = -N'*dp
-        A = N' * (S .* N);   % 等价于 N'*diag(S)*N
-        b = -N' * dp_tube;
-        du = A \ b;
-        mdot_R = mdot0 + N * (u0 + du);
-        u0 = u0 + du;
+        mdot_R = mdot0 + N * u;
+        u0 = u;
+        u0_history{i1+1} = u0;
 
         residual_history(i1) = residual_max;
         dp_loop = max(abs((dp_tube') * N));
         dp_loop_history(i1) = dp_loop;
 
-        % 环路压降平衡则步出 Phase 1 (dp_tube 单位为 Pa)
         if dp_loop < 1e-3
-            disp("Phase1 环路平衡，进入精调")
+            fprintf('Phase1 流量稳定 (dp_loop=%.2e Pa)，进入 Phase2\n', dp_loop);
             break
         end
     end
+    i1_phase1 = i1;
+else
+    i1_phase1 = 0;
 end
 
-% Phase 2: 精调 — 与 Main 一致：热力+压力+流量重分配，满足精度步出
-if ~isempty(N)
-    for i2 = i1+1:loopmax
+%% Phase 2: 完整扫描 — 与 Main 一致（热力+压力+流量更新）
+if has_loops
+    for i2 = i1_phase1+1:loopmax
         iter_h_out{i2} = h_R_out;
         iter_p_out{i2} = p_R_out;
         iter_mdot{i2}  = mdot_R;
@@ -139,25 +147,6 @@ if ~isempty(N)
 
         % 热力扫描
         residual_max = 0;
-        [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
-         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-         dp_tube, residual_max] = scanTubes(...
-            heatPaths, predecessors_in, ...
-            h_R_in, h_R_out, T_MA_in, T_MA_out, ...
-            p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-            mdot_R, mdot_MA, TCinf, GeoCondition, ...
-            CV_num, row, 2, Prop_handle, ...
-            h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
-            residual_max, dp_tube);
-        tube_cal = tube_cal + 1;
-        snapshot_h_out{tube_cal} = h_R_out;
-        snapshot_p_out{tube_cal} = p_R_out;
-        snapshot_mdot{tube_cal}  = mdot_R;
-        snapshot_dp{tube_cal}    = dp_tube;
-        snapshot_flag(tube_cal)  = 2;
-        snapshot_iter(tube_cal)  = i2;
-
-        % 压力扫描
         [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
          p_R_in, p_R_out, p_MA_in, p_MA_out, ...
          dp_tube, residual_max] = scanTubes(...
@@ -176,21 +165,99 @@ if ~isempty(N)
         snapshot_flag(tube_cal)  = 1;
         snapshot_iter(tube_cal)  = i2;
 
-        % 流量重分配 — 显式线性化
-        dp_Pa = dp_tube * 1e6;   % dp_tube 来自压力扫描，单位为 MPa
-        S = R_coef * dp_Pa ./ mdot_R;
-        A = N' * (S .* N);
-        b = -N' * dp_Pa;
-        du = A \ b;
-        mdot_R = mdot0 + N * (u0 + du);
-        u0 = u0 + du;
+        % 压力扫描
+        [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+         dp_tube, residual_max] = scanTubes(...
+            heatPaths, predecessors_in, ...
+            h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+            p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+            mdot_R, mdot_MA, TCinf, GeoCondition, ...
+            CV_num, row, 2, Prop_handle, ...
+            h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
+            residual_max, dp_tube);
+        tube_cal = tube_cal + 1;
+        snapshot_h_out{tube_cal} = h_R_out;
+        snapshot_p_out{tube_cal} = p_R_out;
+        snapshot_mdot{tube_cal}  = mdot_R;
+        snapshot_dp{tube_cal}    = dp_tube;
+        snapshot_flag(tube_cal)  = 2;
+        snapshot_iter(tube_cal)  = i2;
+
+        % 流量更新 — Newton 迭代
+        dp_Pa = dp_tube * 1e6;
+        R_flow_coef = dp_Pa ./ (mdot_R.^R_coef);
+        u = u0;
+        for k = 1:10
+            m_k   = mdot0 + N * u;
+            F     = N' * (R_flow_coef .* m_k.^R_coef);
+            S     = R_coef * R_flow_coef .* m_k.^(R_coef - 1);
+            J     = N' * (S .* N);
+            du    = -J \ F;
+            u     = u + du;
+            if norm(du) < 1e-8, break; end
+        end
+        mdot_R = mdot0 + N * u;
+        u0 = u;
+        u0_history{i2+1} = u0;
 
         residual_history(i2) = residual_max;
-        dp_loop_history(i2)   = max(abs((dp_tube')*N));
+        dp_loop_history(i2)  = max(abs((dp_tube')*N));
 
         if max(abs((dp_tube')*N)) < 1e-6 && (residual_max < residual_limit)
             disp("压降收敛")
             i1 = i2;
+            break
+        end
+    end
+else
+    % 无环路：热力+压力，残差收敛即步出
+    for i1 = 1:loopmax
+        iter_h_out{i1} = h_R_out;
+        iter_p_out{i1} = p_R_out;
+        iter_mdot{i1}  = mdot_R;
+        iter_dp{i1}    = dp_tube;
+
+        residual_max = 0;
+        [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+         dp_tube, residual_max] = scanTubes(...
+            heatPaths, predecessors_in, ...
+            h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+            p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+            mdot_R, mdot_MA, TCinf, GeoCondition, ...
+            CV_num, row, 1, Prop_handle, ...
+            h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
+            residual_max, dp_tube);
+        tube_cal = tube_cal + 1;
+        snapshot_h_out{tube_cal} = h_R_out;
+        snapshot_p_out{tube_cal} = p_R_out;
+        snapshot_mdot{tube_cal}  = mdot_R;
+        snapshot_dp{tube_cal}    = dp_tube;
+        snapshot_flag(tube_cal)  = 1;
+        snapshot_iter(tube_cal)  = i1;
+
+        [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+         dp_tube, residual_max] = scanTubes(...
+            heatPaths, predecessors_in, ...
+            h_R_in, h_R_out, T_MA_in, T_MA_out, ...
+            p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+            mdot_R, mdot_MA, TCinf, GeoCondition, ...
+            CV_num, row, 2, Prop_handle, ...
+            h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
+            residual_max, dp_tube);
+        tube_cal = tube_cal + 1;
+        snapshot_h_out{tube_cal} = h_R_out;
+        snapshot_p_out{tube_cal} = p_R_out;
+        snapshot_mdot{tube_cal}  = mdot_R;
+        snapshot_dp{tube_cal}    = dp_tube;
+        snapshot_flag(tube_cal)  = 2;
+        snapshot_iter(tube_cal)  = i1;
+
+        dp_loop_history(i1) = 0;
+        if residual_max < residual_limit
+            disp("残差收敛")
             break
         end
     end
@@ -215,7 +282,7 @@ end
 
 
 
-function  F = alg_loop(x0,BD,InletBD,GeoCondition,CV,N,solver_flag,Prop_handle)
+function  [F, cache_R_out, cache_MA_out] = alg(x0,BD,InletBD,GeoCondition,CV,N,solver_flag,Prop_handle,cache_R_in,cache_MA_in)
 
 loopmax = 100;
 residual_Energy = 1e-3;
@@ -241,6 +308,7 @@ if solver_flag == 3
         end
     end
     F = [dp_R,x0(1)];
+    cache_R_out = {}; cache_MA_out = {};
     return
 end
 
@@ -265,16 +333,55 @@ A_R_CV = A_R/CV/Tube_num;
 A_MA_CV = A_MA/CV/Tube_num;
 
 if solver_flag == 1
+
     x0_R  = [x0(1);BD(1)];
     x0_MA = [x0(2);BD(2)];
+
+    % 热力扫描中压力不变，饱和物性仅取决于 p，提前计算一并用于入口 Prop1 和出口 sat_cache
+    sat_in = cell(1,9);
+    sat_in{1} = Prop_handle.v_liq(0, p_R_inlet); sat_in{2} = Prop_handle.v_vap(1, p_R_inlet);
+    sat_in{3} = Prop_handle.Pr_liq(0, p_R_inlet); sat_in{4} = Prop_handle.Pr_vap(1, p_R_inlet);
+    sat_in{5} = Prop_handle.Nu_liq(0, p_R_inlet); sat_in{6} = Prop_handle.Nu_vap(1, p_R_inlet);
+    sat_in{7} = Prop_handle.k_liq(0, p_R_inlet); sat_in{8} = Prop_handle.k_vap(1, p_R_inlet);
+    sat_in{9} = Prop_handle.T_liq(0, p_R_inlet);
+
+    % 入口缓存：传入 sat_in 避免 Prop1 内重复计算饱和值
+    if nargin >= 9 && ~isempty(cache_R_in)
+        inlet_props = cache_R_in;
+    else
+        inlet_props = cell(1,14);
+        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_in);
+    end
+    if nargin >= 10 && ~isempty(cache_MA_in)
+        inlet_air_props = cache_MA_in;
+    else
+        Ra = 287.047;
+        inlet_air_props = cell(1,6);
+        inlet_air_props{1} = Prop_handle.hair(T_MA_inlet);
+        inlet_air_props{2} = Prop_handle.Prair(T_MA_inlet);
+        inlet_air_props{3} = Prop_handle.visair(T_MA_inlet);
+        inlet_air_props{4} = Prop_handle.kair(T_MA_inlet);
+        inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
+        inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
+    end
+
+    % 出口饱和缓存：复用 sat_in，仅 Tsatliq 重取 p_out
+    sat_cache = cell(1,9);
+    sat_cache{1} = sat_in{1}; sat_cache{2} = sat_in{2};
+    sat_cache{3} = sat_in{3}; sat_cache{4} = sat_in{4};
+    sat_cache{5} = sat_in{5}; sat_cache{6} = sat_in{6};
+    sat_cache{7} = sat_in{7}; sat_cache{8} = sat_in{8};
+    sat_cache{9} = Prop_handle.T_liq(0, BD(1));
+
     for i = 1:loopmax
-        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[]);
+        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props,sat_cache);
+
         HTC_R = out{3};
         dEF_R = out{5};
         T_R   = out{6};
-        dp_CV = out{4};   % ← 提取控制体压降
 
-        out_MA = DryA_cal_10(x0_MA,BD_MA,GeoCondition,CV,N,Prop_handle);
+        out_MA = DryA_cal_10(x0_MA,BD_MA,GeoCondition,CV,N,Prop_handle,inlet_air_props);
+
         dEF_MA = out_MA{1};
         n_fin  = out_MA{2};
         HTC_MA = out_MA{3};
@@ -295,15 +402,46 @@ if solver_flag == 1
             x0_MA(1) = Q/cp_MA/(mdot_MA_inlet) + T_MA_inlet;
         end
     end
-    F = [x0_R(1); x0_MA(1); dp_CV];   % ← 额外返回 dp
+
+    cache_R_out = out{7};
+    cache_MA_out = out_MA{7};
+    F = [x0_R(1);x0_MA(1)];
 
 elseif solver_flag == 2
+
     x0_R  = [BD(1);x0(1)];
     x0_MA = [BD(2);x0(2)];
+
+    sat_in = cell(1,9);
+    sat_in{1} = Prop_handle.v_liq(0, p_R_inlet); sat_in{2} = Prop_handle.v_vap(1, p_R_inlet);
+    sat_in{3} = Prop_handle.Pr_liq(0, p_R_inlet); sat_in{4} = Prop_handle.Pr_vap(1, p_R_inlet);
+    sat_in{5} = Prop_handle.Nu_liq(0, p_R_inlet); sat_in{6} = Prop_handle.Nu_vap(1, p_R_inlet);
+    sat_in{7} = Prop_handle.k_liq(0, p_R_inlet); sat_in{8} = Prop_handle.k_vap(1, p_R_inlet);
+    sat_in{9} = Prop_handle.T_liq(0, p_R_inlet);
+
+    if nargin >= 9 && ~isempty(cache_R_in)
+        inlet_props = cache_R_in;
+    else
+        inlet_props = cell(1,14);
+        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_in);
+    end
+    if nargin >= 10 && ~isempty(cache_MA_in)
+        inlet_air_props = cache_MA_in;
+    else
+        Ra = 287.047;
+        inlet_air_props = cell(1,6);
+        inlet_air_props{1} = Prop_handle.hair(T_MA_inlet);
+        inlet_air_props{2} = Prop_handle.Prair(T_MA_inlet);
+        inlet_air_props{3} = Prop_handle.visair(T_MA_inlet);
+        inlet_air_props{4} = Prop_handle.kair(T_MA_inlet);
+        inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
+        inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
+    end
+
     for i = 1:loopmax
-        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[]);
+        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props);
         dp_R = out{4};
-        out_MA = DryA_cal_10(x0_MA,BD_MA,GeoCondition,CV,N,Prop_handle);
+        out_MA = DryA_cal_10(x0_MA,BD_MA,GeoCondition,CV,N,Prop_handle,inlet_air_props);
         dp_MA = out_MA{5};
         if max(abs([(dp_R-(p_R_inlet-x0_R(2))*1e6)/dp_R,...
                     (dp_MA-(p_MA_inlet-x0_MA(2))*1e6)/dp_MA]))<residual_dp && i<loopmax
@@ -317,14 +455,117 @@ elseif solver_flag == 2
             x0_MA(2) = p_MA_inlet - dp_MA/1e6;
         end
     end
+    cache_R_out = out{7};
+    cache_MA_out = out_MA{7};
     F = [x0_R(2);x0_MA(2)];
 end
 end
 
 
+
+function  [F, dp_CV, cache_R_out, cache_MA_out] = alg_phase1(x0,BD,InletBD,GeoCondition,CV,N,Prop_handle,cache_R_in,cache_MA_in)
+% 与 alg(solver_flag=1) 相同，额外返回每个 CV 的压降 dp_CV (Pa)
+
+loopmax = 100;
+residual_Energy = 1e-3;
+
+h_R_inlet = InletBD(1);
+p_R_inlet = InletBD(2);
+T_MA_inlet = InletBD(3);
+p_MA_inlet = InletBD(4);
+mdot_R_inlet  = InletBD(5);
+mdot_MA_inlet = InletBD(6);
+
+BD_R.h_R_inlet    = h_R_inlet;
+BD_R.mdot_R_inlet = mdot_R_inlet;
+BD_R.p_R_inlet    = p_R_inlet;
+BD_MA.T_MA_inlet    = T_MA_inlet;
+BD_MA.mdot_MA_inlet = mdot_MA_inlet;
+BD_MA.p_MA_inlet    = p_MA_inlet;
+
+A_R = GeoCondition.A_R;
+A_MA = GeoCondition.A_MA;
+Tube_num = GeoCondition.Tube_num;
+A_R_CV = A_R/CV/Tube_num;
+A_MA_CV = A_MA/CV/Tube_num;
+
+x0_R  = [x0(1);BD(1)];
+x0_MA = [x0(2);BD(2)];
+
+sat_in = cell(1,9);
+sat_in{1} = Prop_handle.v_liq(0, p_R_inlet); sat_in{2} = Prop_handle.v_vap(1, p_R_inlet);
+sat_in{3} = Prop_handle.Pr_liq(0, p_R_inlet); sat_in{4} = Prop_handle.Pr_vap(1, p_R_inlet);
+sat_in{5} = Prop_handle.Nu_liq(0, p_R_inlet); sat_in{6} = Prop_handle.Nu_vap(1, p_R_inlet);
+sat_in{7} = Prop_handle.k_liq(0, p_R_inlet); sat_in{8} = Prop_handle.k_vap(1, p_R_inlet);
+sat_in{9} = Prop_handle.T_liq(0, p_R_inlet);
+
+if nargin >= 8 && ~isempty(cache_R_in)
+    inlet_props = cache_R_in;
+else
+    inlet_props = cell(1,14);
+    [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_in);
+end
+if nargin >= 9 && ~isempty(cache_MA_in)
+    inlet_air_props = cache_MA_in;
+else
+    Ra = 287.047;
+    inlet_air_props = cell(1,6);
+    inlet_air_props{1} = Prop_handle.hair(T_MA_inlet);
+    inlet_air_props{2} = Prop_handle.Prair(T_MA_inlet);
+    inlet_air_props{3} = Prop_handle.visair(T_MA_inlet);
+    inlet_air_props{4} = Prop_handle.kair(T_MA_inlet);
+    inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
+    inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
+end
+
+sat_cache = cell(1,9);
+sat_cache{1} = sat_in{1}; sat_cache{2} = sat_in{2};
+sat_cache{3} = sat_in{3}; sat_cache{4} = sat_in{4};
+sat_cache{5} = sat_in{5}; sat_cache{6} = sat_in{6};
+sat_cache{7} = sat_in{7}; sat_cache{8} = sat_in{8};
+sat_cache{9} = Prop_handle.T_liq(0, BD(1));
+
+for i = 1:loopmax
+    out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props,sat_cache);
+
+    HTC_R = out{3};
+    dEF_R = out{5};
+    T_R   = out{6};
+    dp_CV = out{4};   % Pa，当前 CV 压降
+
+    out_MA = DryA_cal_10(x0_MA,BD_MA,GeoCondition,CV,N,Prop_handle,inlet_air_props);
+
+    dEF_MA = out_MA{1};
+    n_fin  = out_MA{2};
+    HTC_MA = out_MA{3};
+    cp_MA  = out_MA{4};
+
+    dT = T_R -(T_MA_inlet + x0(2))/2;
+    UA_R = 1./(1./(HTC_R*A_R_CV)+1./(n_fin.*HTC_MA*A_MA_CV));
+    Q = dT.*UA_R;
+
+    if max(abs([(dEF_R*1e3-Q)/Q,(dEF_MA+Q)/Q]))<residual_Energy && i<loopmax
+        x0_R(1) = h_R_inlet - Q/mdot_R_inlet/1e3;
+        x0_MA(1) = Q/cp_MA/(mdot_MA_inlet) + T_MA_inlet;
+        break
+    elseif i==loopmax
+        disp("换热不动点迭代失败")
+    else
+        x0_R(1) = h_R_inlet - Q/mdot_R_inlet/1e3;
+        x0_MA(1) = Q/cp_MA/(mdot_MA_inlet) + T_MA_inlet;
+    end
+end
+
+cache_R_out = out{7};
+cache_MA_out = out_MA{7};
+F = [x0_R(1);x0_MA(1)];
+end
+
+
+
 function [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
           p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-          R_flow, dp_tube, residual_max] = scanTubes_loop(...
+          R_flow, dp_tube, residual_max] = scanTubes_phase1(...
     tubePaths, predecessors_in, ...
     h_R_in, h_R_out, T_MA_in, T_MA_out, ...
     p_R_in, p_R_out, p_MA_in, p_MA_out, ...
@@ -335,7 +576,7 @@ function [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
 
 nTubes = length(tubePaths);
 R_flow  = zeros(nTubes, 1);
-dp_tube = zeros(nTubes, 1);   % 每根管总压降 (Pa)
+dp_tube = zeros(nTubes, 1);   % 每管总压降 (Pa)
 
 for i2 = 1:nTubes
     tube = tubePaths(i2);
@@ -368,8 +609,9 @@ for i2 = 1:nTubes
 
     flowDirection = TCinf.FlowDirection(tube);
 
-    dp_acc = 0;  % 累积本管总压降 (Pa)
+    dp_acc = 0;
 
+    cache_R_in = {}; cache_MA_in = {};
     for i3 = 1:CV_num
         rev = CV_num + 1 - i3;
 
@@ -388,12 +630,11 @@ for i2 = 1:nTubes
         end
 
         N1 = ceil(tube / row);
-        xout = alg_loop(x0, BD, InBD, GeoCondition, CV_num, N1, 1, Prop_handle);
+        [xout, dp_CV, cache_R_out, cache_MA_out] = alg_phase1(x0, BD, InBD, GeoCondition, CV_num, N1, Prop_handle, cache_R_in, cache_MA_in);
         residual_max = max(max(abs(xout(1:2) - x0) ./ x0), residual_max);
 
         h_R_out_tube(i3) = xout(1);
-        dp_CV = xout(3);            % 提取本 CV 压降 (Pa)
-        dp_acc = dp_acc + dp_CV;  % 累加
+        dp_acc = dp_acc + dp_CV;
 
         % 同步推进压力场
         p_R_out_tube(i3) = p_R_in_tube(i3) - dp_CV/1e6;
@@ -406,6 +647,8 @@ for i2 = 1:nTubes
         if i3 < CV_num
             h_R_in_tube(i3 + 1) = xout(1);
             p_R_in_tube(i3 + 1) = p_R_out_tube(i3);
+            cache_R_in = cache_R_out;
+            cache_MA_in = cache_MA_out;
         end
     end
 
@@ -416,14 +659,13 @@ for i2 = 1:nTubes
     T_MA_in = [T_MA_inlet * ones(CV_num, row), T_MA_out(:, 1:end-row)];
     p_MA_in = [p_MA_inlet * ones(CV_num, row), p_MA_out(:, 1:end-row)];
 
-    % 管级压阻: dp_acc 是各 CV 压降之和 (Pa)
     dp_tube(tube) = dp_acc;
     R_flow(tube)  = dp_acc ./ (mdot_R_tube .^ R_coef);
 end
 end
 
 
-% ===== 以下为原始 scanTubes（用于最终压力校验，不可修改） =====
+
 function [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
           p_R_in, p_R_out, p_MA_in, p_MA_out, ...
           dp_tube, residual_max] = scanTubes(...
@@ -497,8 +739,8 @@ for i2 = 1:nTubes
         end
 
         N1 = ceil(tube / row);
-        xout = alg_loop(x0, BD, InBD, GeoCondition, CV_num, N1, solver_flag, Prop_handle);
-        residual_max = max(max(abs(xout(1:2,:) - x0) ./ x0), residual_max);
+        [xout, ~, ~] = alg(x0, BD, InBD, GeoCondition, CV_num, N1, solver_flag, Prop_handle, {}, {});
+        residual_max = max(max(abs(xout - x0) ./ x0), residual_max);
 
         if solver_flag == 1
             h_R_out_tube(i3) = xout(1);
