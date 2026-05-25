@@ -148,6 +148,28 @@ Cavallini-Zecchin 两相公式与 Gnielinski 单相公式在干度 x=0 和 x=1 �
 4. 换热求解和压降求解均采用不动点迭代法，流量更新采用 `fsolve` 求解压阻方程。
 5. 在 16 根管、2 进 2 出（环路数为 4）的计算中，流量分配与 CoilDesigner 计算结果基本一致。
 
+#### 收敛判据（双层结构）
+
+程序采用**内层—外层**双层收敛判断，内层保证物理守恒，外层保证场量一致。
+
+**内层收敛（单控制体不动点迭代）** — `alg` 函数，每个 CV 独立判断：
+
+| 求解模式 | 判据 | 阈值 | 失败含义 |
+|----------|------|------|----------|
+| 换热 (`solver_flag=1`) | `max(|dEF_R - Q|/Q, |dEF_MA + Q|/Q)` | < 1e-3 | 能量守恒不满足，该 CV 计算不可信 |
+| 压降 (`solver_flag=2`) | `max(|dp_R_calc - dp_R_target|/dp_R_calc, |dp_MA_calc - dp_MA_target|/dp_MA_calc)` | < 1e-3 | 压降守恒不满足，该 CV 计算不可信 |
+
+内层是外层迭代的基础——若任一 CV 的不动点迭代报错（"换热/压降不动点迭代失败"），该次扫描的结果已不可靠，后续外层迭代无意义。
+
+**外层收敛（主循环）** — 两个条件**同时**满足：
+
+| 条件 | 含义 | 阈值 |
+|------|------|------|
+| `max(abs((dp_tube') × N))` | 环路压降最大不平衡量（MPa） | < 1e-6（= 1 Pa） |
+| `residual_max` | 本次扫描与上次扫描所有 CV 状态量（h_R_out, p_R_out, T_MA_out, p_MA_out）的最大相对变化 | < 1e-3 |
+
+两个条件分别对应并联支路压力平衡和全场迭代稳定。有环路时两者都需满足；无环路时压降判据自动跳过（`N` 为空，`dp_loop_history=0`），仅判断 `residual_max < 1e-3`。
+
 ### 注意事项
 
 #### ⚠️ 1. 物性数据获取（运行前必读）
@@ -347,6 +369,28 @@ Solver algorithm update: variable-exponent pressure-resistance model + unified h
      - b. Directly update the pressure field along breadth-first paths; exit when residual converges.
 4. Both heat transfer and pressure drop solvers use fixed-point iteration. Flow rate update uses `fsolve` to solve the resistance equations.
 5. For a case with 16 tubes, 2 inlets and 2 outlets (4 loops), the flow distribution is essentially consistent with CoilDesigner results.
+
+#### Convergence Criteria (Two-Level)
+
+The program uses a **two-level** convergence check: inner level ensures physical conservation, outer level ensures field consistency.
+
+**Inner convergence (per-CV fixed-point iteration)** — `alg` function, each CV judged independently:
+
+| Mode | Criterion | Threshold | Failure means |
+|------|-----------|-----------|---------------|
+| Heat transfer (`solver_flag=1`) | `max(|dEF_R - Q|/Q, |dEF_MA + Q|/Q)` | < 1e-3 | Energy conservation violated; CV result unreliable |
+| Pressure drop (`solver_flag=2`) | `max(|dp_calc - dp_target|/dp_calc)` | < 1e-3 | Pressure conservation violated; CV result unreliable |
+
+Inner convergence is the foundation: if any CV's fixed-point iteration fails ("换热/压降不动点迭代失败"), the entire scan is unreliable regardless of outer-loop status.
+
+**Outer convergence (main loop)** — both conditions must be met simultaneously:
+
+| Condition | Meaning | Threshold |
+|-----------|---------|-----------|
+| `max(abs((dp_tube') × N))` | Max loop pressure imbalance (MPa) | < 1e-6 (= 1 Pa) |
+| `residual_max` | Max relative change of all CV state variables (h_R_out, p_R_out, T_MA_out, p_MA_out) between successive scans | < 1e-3 |
+
+These correspond to parallel-branch pressure balance and global field stationarity. With loops, both must hold; without loops, the pressure criterion is automatically skipped (`N` empty, `dp_loop_history=0`).
 
 ### Important Notes
 
