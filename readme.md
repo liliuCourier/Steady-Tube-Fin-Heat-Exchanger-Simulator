@@ -172,18 +172,32 @@ Cavallini-Zecchin 两相公式与 Gnielinski 单相公式在干度 x=0 和 x=1 �
 
 #### 流量更新 — 显式线性化
 
-环路流量重分配原采用 `fsolve`（Levenberg-Marquardt）求解非线性压阻方程组，每轮需多次调用 `uF` 函数。改为显式线性化（单步 Newton 步）：
+环路流量重分配原采用 `fsolve`（Levenberg-Marquardt）求解非线性压阻方程组，每轮需多次调用 `uF` 函数。改为显式线性化（单步 Newton 步）。
 
-**物理模型**：管压降服从 `Δp = R · m^e`（e = 1.81，Blasius 标度），环路平衡要求 `N' · Δp = 0`。
+**为什么能这样做？**
 
-**推导**：在 u0 处一阶 Taylor 展开 `(m0 + N·u)^e`：
+压阻方程 `Δp = R · m^e`（e = 1.81）是指数形式，严格说应是非线性求解。但外层迭代框架提供了关键的近似条件：
+
+1. **外层迭代逐步逼近**：每次外层迭代后，热力场和压力场已被重新扫描，压阻系数 `R` 随之更新。下一次流量更新时，`R` 已是基于最新场量的值——这意味着流量调整只需「修正」当前解的偏差，而非从零求解。
+
+2. **环路数极少**：16 管场景下环路数仅 4，自由度低。Newton 法的收敛半径在低维问题中较大，单步线性化足以捕获大部分修正量。
+
+3. **线性化误差由外层迭代消化**：单步 Newton 给出的 `Δu` 不会精确满足 `N'·Δp = 0`（忽略了高阶项 `O(Δu²)`），但下一轮外层迭代会重新计算 `R_flow` 和 `dp_tube`，为流量提供新的修正。实质是把非线性求解分摊到了多层迭代中——线性化 + 外层迭代 = 隐式的 Newton 迭代。
+
+4. **压阻关系接近线性**：e = 1.81，`m^1.81` 在工作点附近的曲率不大。一阶 Taylor 展开 `m^e ≈ m₀^e + e·m₀^(e-1)·Δm` 在典型流量变化范围（±20%）内的截断误差 < 5%。
+
+综上：外层迭代提供了逐步修正的外壳，线性化在每步给出足够精确的增量，非线性残差由下一轮消化。实际验证收敛行为与 fsolve 一致（4 次外层迭代收敛）。
+
+**怎么做？**
+
+对环路流量约束 `N' · [R · (m₀ + N·u)^e] = 0` 在 `u0` 处线性化：
 
 ```
-d(dp)/dm = e · R · m^(e-1) = e · dp / m        ← 管级灵敏度
-N' · diag(S) · N · Δu = -N' · dp               ← 环路线性方程组
+灵敏度:  S = d(dp)/dm = e · R · m^(e-1) = e · dp / m
+方程组:  N' · diag(S) · N · Δu = -N' · dp
 ```
 
-其中 `S = e · dp / m`（管灵敏度向量），矩阵 `A = N'·diag(S)·N` 为 n_loops × n_loops 对称正定。16 管 4 环路场景下 A 仅 4×4，`A\b` 直接求解。
+矩阵 `A = N'·diag(S)·N` 为 n_loops × n_loops 对称正定（由 `N'XN` 二次型保证），`A\b` 直接求解。
 
 | 项目 | fsolve | 显式线性化 |
 |------|--------|-----------|
@@ -416,18 +430,32 @@ These correspond to parallel-branch pressure balance and global field stationari
 
 #### Flow Update — Explicit Linearization
 
-Loop mass flow redistribution originally used `fsolve` (Levenberg-Marquardt) to solve the nonlinear resistance equations, requiring multiple `uF` calls per outer iteration. Replaced with explicit linearization (single Newton step):
+Loop mass flow redistribution originally used `fsolve` (Levenberg-Marquardt) to solve the nonlinear resistance equations. Replaced with explicit linearization (single Newton step).
 
-**Model**: Tube pressure drop `Δp = R · m^e` (e = 1.81, Blasius scaling). Loop balance requires `N' · Δp = 0`.
+**Why it works**
 
-**Derivation**: First-order Taylor expansion of `(m0 + N·u)^e` at u0:
+The resistance law `Δp = R · m^e` (e = 1.81) is nonlinear, but the outer iteration framework provides the key enabling conditions:
+
+1. **Outer iteration progressively refines**: After each outer iteration, the heat and pressure fields are re-scanned, updating the resistance coefficient `R`. The next flow update only needs to *correct* the current deviation — not solve from scratch.
+
+2. **Low loop count**: With only 4 loops for 16 tubes, the system has very few degrees of freedom. Newton's method has a larger convergence radius in low dimensions — a single linearization captures most of the correction.
+
+3. **Linearization error absorbed by outer iteration**: A single Newton step does not exactly satisfy `N'·Δp = 0` (higher-order terms `O(Δu²)` are dropped). But the next outer iteration recomputes `R_flow` and `dp_tube`, providing a fresh correction. The net effect: linearization + outer iteration = implicit Newton iteration, with nonlinearity distributed across layers.
+
+4. **Near-linear resistance law**: e = 1.81. Over typical flow changes (±20%), the truncation error of `m^e ≈ m₀^e + e·m₀^(e-1)·Δm` is < 5% — well within outer iteration tolerance.
+
+In practice, convergence behavior matches fsolve (4 outer iterations to converge).
+
+**Method**
+
+Linearize `N' · [R · (m₀ + N·u)^e] = 0` at u0:
 
 ```
-d(dp)/dm = e · R · m^(e-1) = e · dp / m        ← per-tube sensitivity
-N' · diag(S) · N · Δu = -N' · dp               ← loop linear system
+Sensitivity:  S = d(dp)/dm = e · R · m^(e-1) = e · dp / m
+Linear system:  N' · diag(S) · N · Δu = -N' · dp
 ```
 
-Where `S = e · dp / m`. Matrix `A = N'·diag(S)·N` is n_loops × n_loops, symmetric positive-definite. For 16 tubes / 4 loops, A is only 4×4 — solved directly via `A\b`.
+Matrix `A = N'·diag(S)·N` is n_loops × n_loops, symmetric positive-definite (guaranteed by the `N'XN` quadratic form). Solved directly via `A\b`.
 
 | Method | fsolve | Explicit linearization |
 |--------|--------|----------------------|
