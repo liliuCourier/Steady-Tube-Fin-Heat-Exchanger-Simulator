@@ -58,11 +58,12 @@
 
 | 日期 | 提交 | 优化内容 | 物性调用削减 | 分支 |
 |------|------|----------|-------------|------|
-| 5/25 | `319d30e` | **空气侧入口缓存**：`DryA_cal_10` 循环内 5 项插值（hair/Prair/visair/kair/cpair）+ vin 改为缓存传入 | 每轮省 5 次插值 + 1 次理想气体计算 | `perf-property-cache` |
-| 5/25 | `5f39210` | **工质侧入口缓存**：`alg` 不动点循环前预计算入口 `Prop1`，循环内复用 | ~50%（每 CV 迭代从 2 次→1 次 Prop1） | `perf-property-cache` |
-| 5/25 | `3a94197` | **物性算术平均**：取消平均态 `(p_CV,h_CV)` 处第三次 `Prop1`，14 个物性取进出口算术平均 | ~33%（每 CV 从 3 次→2 次 Prop1） | `auto-circuit` |
+| 5/25 | `3ba7464` | **管内 CV 间出口转发**：CV i 出口物性缓存传给 CV i+1 作入口，每管仅首 CV 查一次入口 | 每管从 N→1 次入口 Prop1（N=CV 数） | `perf-property-cache` |
+| 5/25 | `319d30e` | **空气侧入口缓存**：`DryA_cal_10` 循环内 5 项插值 + vin 改为缓存传入 | 每轮省 5 次插值 + 1 次理想气体计算 | `perf-property-cache` |
+| 5/25 | `5f39210` | **工质侧入口缓存**：`alg` 不动点循环前预计算入口 `Prop1`，循环内复用 | ~50%（每 CV 迭代从 2→1 次 Prop1） | `perf-property-cache` |
+| 5/25 | `3a94197` | **物性算术平均**：取消平均态 `(p_CV,h_CV)` 处第三次 `Prop1` | ~33%（每 CV 从 3→2 次 Prop1） | `auto-circuit` |
 
-**当前状态**：三项合计，工质侧 `R_cal_10` 每 CV 每迭代从 3 次 Prop1 降为 1 次（仅出口），空气侧 `DryA_cal_10` 每 CV 每迭代省去 6 项冗余入口计算。已知子函数 0.417s 耗时中 0.35s 在物性调用，预计子函数耗时降至 ~0.18s。
+**当前状态**：四项合计，工质侧 `R_cal_10` 每管仅首 CV 查一次入口 Prop1，所有 CV 每迭代仅 1 次出口 Prop1；空气侧入口插值同理仅在首 CV 执行。预计子函数耗时从 0.417s 降至 ~0.12s。
 
 ### 仿真流程
 
@@ -165,6 +166,7 @@ Prop_handle = Prop_load(refprop_location, R, 1e-3, 5.5, 80, 510, 100, 25, 25);
 | SHA | 日期 | 说明 |
 |-----|------|------|
 | `319d30e` | 5/25 | perf: 空气侧入口缓存 — DryA_cal_10 循环内消除重复插值 |
+| `3ba7464` | 5/25 | perf: 管内 CV 出口转发 — 下游 CV 入口缓存复用上游出口 |
 | `5f39210` | 5/25 | perf: 工质侧入口缓存 — alg 循环内消除冗余 Prop1 调用 |
 | `3a94197` | 5/25 | R_cal_10: 物性平均策略优化 — 取消第三次 Prop1 调用 |
 | `7cddae7` | 5/22 | PostProcessing: 修复 SceneNode 警告 — LaTeX 改 TeX |
@@ -266,11 +268,12 @@ Solver algorithm update: variable-exponent pressure-resistance model + unified h
 
 | Date | Commit | Optimization | Prop1 Calls Reduced | Branch |
 |------|--------|-------------|-------------------|--------|
+| 5/25 | `3ba7464` | **Intra-tube CV outlet forwarding**: CV i outlet cache → CV i+1 inlet; only first CV per tube queries inlet | per-tube: N→1 inlet Prop1 (N=CV count) | `perf-property-cache` |
 | 5/25 | `319d30e` | **Air-side inlet cache**: `DryA_cal_10` loop: 5 interpolations (hair/Prair/visair/kair/cpair) + vin now cached | 5 interp + 1 ideal-gas saved per iter | `perf-property-cache` |
 | 5/25 | `5f39210` | **Refrigerant inlet cache**: Pre-compute inlet `Prop1` before `alg` fixed-point loop | ~50% (2→1 Prop1 per CV iter) | `perf-property-cache` |
 | 5/25 | `3a94197` | **Arithmetic averaging**: Eliminated 3rd `Prop1` at average state; 14 props now arithmetic means | ~33% (3→2 Prop1 per CV) | `auto-circuit` |
 
-**Current status**: Combined, `R_cal_10` per-CV per-iteration Prop1: 3→1; `DryA_cal_10` per-iteration: 6 redundant inlet computations eliminated. With 0.35s of 0.417s sub-function time on property calls, estimated sub-function time drops to ~0.18s.
+**Current status**: Combined, per CV per iteration: 1 outlet Prop1 + 1 outlet air interpolation. Inlet queries reduced from N per tube to 1 (first CV only). Estimated sub-function time: 0.417s → ~0.12s.
 
 ### Simulation Workflow
 
