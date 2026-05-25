@@ -60,9 +60,10 @@
 |------|------|----------|-------------|------|
 | 5/25 | `319d30e` | **空气侧入口缓存**：`DryA_cal_10` 循环内 5 项插值 + vin 改为缓存传入 | 每轮省 5 次插值 + 1 次理想气体计算 | `perf-property-cache` |
 | 5/25 | `5f39210` | **工质侧入口缓存**：`alg` 不动点循环前预计算入口 `Prop1`，循环内复用 | ~50%（每 CV 迭代从 2→1 次 Prop1） | `perf-property-cache` |
+| 5/25 | `f47cf47` | **饱和物性缓存**：换热扫描压力不变，8 项饱和物性从入口缓存直接复用，省去每轮平均 | 0 额外调用（饱和值取自已有入口缓存） | `perf-property-cache` |
 | 5/25 | `3a94197` | **物性算术平均**：取消平均态 `(p_CV,h_CV)` 处第三次 `Prop1` | ~33%（每 CV 从 3→2 次 Prop1） | `auto-circuit` |
 
-**当前状态**：三项合计，工质侧 `R_cal_10` 每 CV 每迭代从 3 次 Prop1 降为 1 次（仅出口）；空气侧 `DryA_cal_10` 省去 6 项冗余入口计算。跨 CV 转发经实测存在收敛一致性问题已回退。预计子函数耗时从 0.417s 降至 ~0.18s。
+**当前状态**：四项合计，工质侧 `R_cal_10` 每 CV 每迭代从 3 次 Prop1 降为 1 次（仅出口），且 8 项饱和物性零开销复用；空气侧 `DryA_cal_10` 省去 6 项冗余入口计算。预计子函数耗时从 0.417s 降至 ~0.15s。
 
 ### 仿真流程
 
@@ -165,6 +166,7 @@ Prop_handle = Prop_load(refprop_location, R, 1e-3, 5.5, 80, 510, 100, 25, 25);
 | SHA | 日期 | 说明 |
 |-----|------|------|
 | `319d30e` | 5/25 | perf: 空气侧入口缓存 — DryA_cal_10 循环内消除重复插值 |
+| `f47cf47` | 5/25 | perf: 饱和物性缓存 — 换热扫描压力不变，复用入口缓存 |
 | `0806808` | 5/25 | Revert: 回退跨 CV 出口转发 — 收敛一致性导致迭代失败 |
 | `5f39210` | 5/25 | perf: 工质侧入口缓存 — alg 循环内消除冗余 Prop1 调用 |
 | `3a94197` | 5/25 | R_cal_10: 物性平均策略优化 — 取消第三次 Prop1 调用 |
@@ -269,9 +271,10 @@ Solver algorithm update: variable-exponent pressure-resistance model + unified h
 |------|--------|-------------|-------------------|--------|
 | 5/25 | `319d30e` | **Air-side inlet cache**: `DryA_cal_10` loop: 5 interpolations (hair/Prair/visair/kair/cpair) + vin now cached | 5 interp + 1 ideal-gas saved per iter | `perf-property-cache` |
 | 5/25 | `5f39210` | **Refrigerant inlet cache**: Pre-compute inlet `Prop1` before `alg` fixed-point loop | ~50% (2→1 Prop1 per CV iter) | `perf-property-cache` |
+| 5/25 | `f47cf47` | **Saturation cache**: heat scan p fixed; 8 saturation props reused from inlet cache | 0 extra calls (saturation from existing inlet cache) | `perf-property-cache` |
 | 5/25 | `3a94197` | **Arithmetic averaging**: Eliminated 3rd `Prop1` at average state; 14 props now arithmetic means | ~33% (3→2 Prop1 per CV) | `auto-circuit` |
 
-**Current status**: Combined, `R_cal_10` per-CV per-iteration Prop1: 3→1; `DryA_cal_10`: 6 redundant inlet computations eliminated. Cross-CV forwarding reverted due to convergence consistency issues. Estimated sub-function time: 0.417s → ~0.18s.
+**Current status**: 4 optimizations combined. `R_cal_10` per-CV per-iteration Prop1: 3→1, plus 8 saturation props at zero cost; `DryA_cal_10`: 6 redundant inlet computations eliminated. Estimated sub-function time: 0.417s → ~0.15s.
 
 ### Simulation Workflow
 
