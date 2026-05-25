@@ -54,6 +54,10 @@
 
 **为何改指数：** Domanski (1989) 最早采用 $\Delta p = R \cdot m^{1.75}$（湍流 Blasius 标度），Ding (2004) 沿用。$1.81$ 比 $2.0$ 更贴近管内流动的物理标度，且配合 `heatPaths` 统一路径，避免了 `pdropPaths` 额外扫描带来的计算开销。
 
+### 5/25 性能优化
+
+`R_cal_10.m` 物性平均策略优化：旧方案每控制容积调用 `Prop1` 三次（进口状态、出口状态、平均 (p,h) 状态），现改为仅在进出口各调用一次，14 个物性参数直接取进出口值的算术平均。省去第三次 REFPROP 查询，以微小精度损失换取约 1/3 的物性调用开销削减。
+
 ### 仿真流程
 
 1. 运行 `PreProcessing` 完成三类预处理：
@@ -150,6 +154,49 @@ Prop_handle = Prop_load(refprop_location, R, 1e-3, 5.5, 80, 510, 100, 25, 25);
 
 ---
 
+## Git 提交历史 / Git Commit History
+
+| SHA | 日期 | 说明 |
+|-----|------|------|
+| `3a94197` | 5/25 | R_cal_10: 物性平均策略优化 — 取消第三次 Prop1 调用 |
+| `7cddae7` | 5/22 | PostProcessing: 修复 SceneNode 警告 — LaTeX 改 TeX |
+| `e518286` | 5/22 | Main_loop_base: 两阶段环路优先求解器 (Phase1+Phase2) |
+| `9f9cb1e` | 5/22 | 新增 Main_loop_base: 环路优先求解器 |
+| `0fdac6e` | 5/22 | 收敛轨迹可视化: 管扫描级 + 迭代级 + 综合指标 |
+| `6721b44` | 5/22 | readme: Demo1.11 补充 PostProcessing 单位转换修复记录 |
+| `e2f276b` | 5/22 | PostProcessing: 修复 dp_loop_history 缺少 *1e6 单位转换 |
+| `586876e` | 5/22 | readme: Demo1.11 中英文版本记录 |
+| `903820f` | 5/22 | Main.m: 压阻指数可变化 + 换热/压力统一路径 + tube_cal |
+| `ab13412` | 5/12 | 修复 cbExport: 流路尺寸变化时跳过 diff_mat 相减 |
+| `38cba0e` | 5/12 | 修复 HX_Path_Planner1 cbResetConn 中 tcbIn 笔误 |
+| `f8a344a` | 5/12 | Main.m: 初始化 R_flow=[]，修复无环路时 PostProcessing 报错 |
+| `65fe423` | 5/12 | readme: 补充 REFPROP/CoolProp 附加功能依赖说明 |
+| `4fdaa4c` | 5/12 | 归档至 Demo1.1: 合并 Demo1.01/1.02，完善 REFPROP 配置指南 |
+| `ad648bb` | 5/12 | 添加 Codelogic.md: 完整代码逻辑与数据结构文档 |
+| `7c0e3ec` | 5/12 | 重构目录结构：函数分模块存放，根目录仅保留3个入口脚本 |
+| `85f733e` | 5/12 | CV_num 移入 GenerateBD 对话框 |
+| `5c4594d` | 5/12 | Main.m: 补充 dp_loop_max 变量定义 |
+| `2b88e1f` | 5/12 | 删除 plotTubeLayout: 流路拓扑已由 HX_Path_Planner1 覆盖 |
+| `c6c3344` | 5/12 | 重构工作流：预处理分离 + GenerateGeo UI + 自动后处理 |
+| `688e869` | 5/12 | GenerateBD: 新增边界条件设置对话框 |
+| `1f4aebd` | 5/12 | readme: Demo1.02 仿真流程 |
+| `22f8db4` | 5/12 | HX_Path_Planner1: 关闭按钮改为隐藏窗口 |
+| `232277a` | 5/12 | HX_Path_Planner1: 流路设计窗口持久化与增量导出 |
+| `f23b355` | 5/12 | HX_Path_Planner1: 左侧进风方向指示 |
+| `7bc367f` | 5/12 | 修复 plotAlongPath 累积压降曲线：有环路时沿前驱路径回溯 |
+| `60dc175` | 5/12 | 修复 summaryTable/exportHxPerf 中有环路时压降计算错误 |
+| `bfe6e54` | 5/12 | readme: Demo1.02 新增所有生成图像说明 |
+| `d4ce3f4` | 5/12 | 简化 plotLoopBalance 子图2：环路不平衡量柱状图 |
+| `9600ba7` | 5/12 | 修复 plotLoopBalance: range(ylim) 替换为 diff(ylim) |
+| `84c6fad` | 5/12 | 修复后处理中压力单位错误：p_*变量为MPa |
+| `96917a0` | 5/12 | readme.md 更新至 Demo1.02 |
+| `0dd8013` | 5/12 | 后处理函数统一移至 PostProcessing/ 子目录 |
+| `b8ddb72` | 5/12 | Demo1.02: 完成后处理六层模块 |
+| `1e518f8` | 5/11 | 添加 readme.md |
+| `38c641b` | 5/11 | Demo1.01 初始版本 |
+
+> 分支: `auto-circuit` | 共 36 个提交 | 截至 2026-05-25 未推送 GitHub
+
 ## English Version
 
 # Steady-Tube-Fin-Heat-Exchanger-Simulator
@@ -206,6 +253,10 @@ Solver algorithm update: variable-exponent pressure-resistance model + unified h
 - Loop pressure-drop convergence history plot: `dp_loop_history` missing `*1e6` unit conversion (internal MPa → display Pa)
 
 **Why change the exponent:** Domanski (1989) first adopted $\Delta p = R \cdot m^{1.75}$ (turbulent Blasius scaling), followed by Ding (2004). $1.81$ is closer to the physical scaling of in-tube flow than $2.0$, and the unified heatPaths scan avoids the extra computational overhead of the separate pdropPaths pass.
+
+### 5/25 Performance Optimization
+
+`R_cal_10.m` property averaging strategy optimized: previously called `Prop1` three times per control volume (inlet, outlet, and average (p,h) states). Now calls `Prop1` only at inlet and outlet, computing arithmetic means of all 14 properties directly. This eliminates the third REFPROP query, trading negligible accuracy loss for roughly a 1/3 reduction in property-call overhead.
 
 ### Simulation Workflow
 
