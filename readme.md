@@ -54,16 +54,31 @@
 
 **为何改指数：** Domanski (1989) 最早采用 $\Delta p = R \cdot m^{1.75}$（湍流 Blasius 标度），Ding (2004) 沿用。$1.81$ 比 $2.0$ 更贴近管内流动的物理标度，且配合 `heatPaths` 统一路径，避免了 `pdropPaths` 额外扫描带来的计算开销。
 
-### 性能优化历史
+### 性能优化历程
 
-| 日期 | 提交 | 优化内容 | 物性调用削减 | 分支 |
-|------|------|----------|-------------|------|
-| 5/25 | `319d30e` | **空气侧入口缓存**：`DryA_cal_10` 循环内 5 项插值 + vin 改为缓存传入 | 每轮省 5 次插值 + 1 次理想气体计算 | `perf-property-cache` |
-| 5/25 | `5f39210` | **工质侧入口缓存**：`alg` 不动点循环前预计算入口 `Prop1`，循环内复用 | ~50%（每 CV 迭代从 2→1 次 Prop1） | `perf-property-cache` |
-| 5/25 | `45768be` | **饱和物性直达 Prop1**：换热扫描 p_out 固定，9 项出口饱和值缓存传入 Prop1，跳过 9 次 REFPROP 插值；两相区体物性由饱和值推导 | 每次出口 Prop1 省 9 次插值 | `perf-property-cache` |
-| 5/25 | `3a94197` | **物性算术平均**：取消平均态 `(p_CV,h_CV)` 处第三次 `Prop1` | ~33%（每 CV 从 3→2 次 Prop1） | `auto-circuit` |
+三步优化，按物性计算的冗余消除层次递进：
 
-**当前状态**：四项合计，工质侧 3→1 次 Prop1/CV/迭代 + 每次出口 Prop1 省 9 次 REFPROP 插值；空气侧省 6 项入口计算。预计子函数耗时 0.417s → ~0.12s。
+**1. 控制体平均物性 — 取消平均态 Prop1 调用** (`3a94197`)
+
+进口算一次 Prop1，出口算一次 Prop1，控制体平均物性直接用进出口值的算术平均，而非在平均 (p,h) 处再调一次物性。每 CV 从 3 次 Prop1 降为 2 次。
+
+> 适用：热力扫描 ✓ | 压力扫描 ✓
+
+**2. 入口物性缓存 — 不动点迭代内复用** (`5f39210` / `319d30e`)
+
+单控制体不动点迭代中，入口 (p,h) 始终保持不变，但原先每轮迭代都重复查询入口物性。改为循环前预计算一次，循环内所有轮次复用。工质侧缓存全部 14 项 + 空气侧缓存 6 项（hair/Prair/visair/kair/cpair/vin）。每 CV 每迭代从 2 次 Prop1 降为 1 次（仅出口）。
+
+> 适用：热力扫描 ✓ | 压力扫描 ✓
+
+**3. 饱和物性缓存 — 直达 Prop1 跳过 REFPROP 插值** (`45768be`)
+
+热力扫描中压力场固定，p_out 不变。8 个饱和物性（vsatliq/vsatvap/Prsatliq/Prsatvap/Nusatliq/Nusatvap/ksatliq/ksatvap）+ Tsatliq 仅取决于压力。从入口缓存中取饱和值作为出口饱和近似（dp~Pa 级，p_in≈p_out），传入 Prop1 替代 9 次 REFPROP 插值函数句柄调用。两相区体物性（D/Pr/Nu/k/T）由饱和值 + 干度 x 直接推导，几乎零额外开销。
+
+> 适用：热力扫描 ✓ | 压力扫描 ✗（p_out 在迭代中变化）
+
+---
+
+**累计效果**：热力扫描 `R_cal_10` 3→1 次 Prop1/CV/迭代 + 出口 Prop1 省 9 次插值；压力扫描 3→1 次 Prop1。空气侧省 6 项入口计算。跨 CV 出口转发经实测存在收敛一致性问题已回退。预计子函数耗时 0.417s → ~0.12s。
 
 ### 仿真流程
 
@@ -264,17 +279,6 @@ Solver algorithm update: variable-exponent pressure-resistance model + unified h
 - Loop pressure-drop convergence history plot: `dp_loop_history` missing `*1e6` unit conversion (internal MPa → display Pa)
 
 **Why change the exponent:** Domanski (1989) first adopted $\Delta p = R \cdot m^{1.75}$ (turbulent Blasius scaling), followed by Ding (2004). $1.81$ is closer to the physical scaling of in-tube flow than $2.0$, and the unified heatPaths scan avoids the extra computational overhead of the separate pdropPaths pass.
-
-### Performance Optimization History
-
-| Date | Commit | Optimization | Prop1 Calls Reduced | Branch |
-|------|--------|-------------|-------------------|--------|
-| 5/25 | `319d30e` | **Air-side inlet cache**: `DryA_cal_10` loop: 5 interpolations (hair/Prair/visair/kair/cpair) + vin now cached | 5 interp + 1 ideal-gas saved per iter | `perf-property-cache` |
-| 5/25 | `5f39210` | **Refrigerant inlet cache**: Pre-compute inlet `Prop1` before `alg` fixed-point loop | ~50% (2→1 Prop1 per CV iter) | `perf-property-cache` |
-| 5/25 | `45768be` | **Saturation cache → Prop1**: p_out fixed during heat scan; 9 outlet sat values bypass 9 REFPROP interpolations inside Prop1 | 9 interp calls saved per outlet Prop1 | `perf-property-cache` |
-| 5/25 | `3a94197` | **Arithmetic averaging**: Eliminated 3rd `Prop1` at average state; 14 props now arithmetic means | ~33% (3→2 Prop1 per CV) | `auto-circuit` |
-
-**Current status**: 4 optimizations combined. `R_cal_10`: 3→1 Prop1/CV/iter + 9 REFPROP interp saved per outlet call; `DryA_cal_10`: 6 inlet computations eliminated. Estimated sub-function time: 0.417s → ~0.12s.
 
 ### Simulation Workflow
 
