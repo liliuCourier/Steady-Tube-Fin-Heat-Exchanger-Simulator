@@ -107,7 +107,8 @@ if has_loops
         snapshot_iter(tube_cal)  = i1;
 
         % 流量更新 — Newton 迭代
-        dp_Pa = dp_tube;
+        mdot_R_prev = mdot_R;
+        dp_Pa = dp_tube*1e6;
         R_flow_coef = dp_Pa ./ (mdot_R.^R_coef);
         u = u0;
         for k = 1:10
@@ -124,11 +125,12 @@ if has_loops
         u0_history{i1+1} = u0;
 
         residual_history(i1) = residual_max;
-        dp_loop = max(abs((dp_tube') * N));
-        dp_loop_history(i1) = dp_loop;
+        dp_loop_history(i1) = max(abs((dp_tube') * N));
 
-        if dp_loop < 1e-3
-            fprintf('Phase1 流量稳定 (dp_loop=%.2e Pa)，进入 Phase2\n', dp_loop);
+        % Phase1 步出判据：前后两次流量相对变化 < 1e-3
+        delta_mdot = max(abs(mdot_R - mdot_R_prev) ./ mdot_R);
+        if i1 > 1 && delta_mdot < 1e-3
+            fprintf('Phase1 流量稳定 (delta_mdot=%.2e)，进入 Phase2\n', delta_mdot);
             break
         end
     end
