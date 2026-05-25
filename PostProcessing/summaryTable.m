@@ -85,11 +85,11 @@ fprintf('\n');
 
 % 管出口状态矩阵
 fprintf('\n各管出口状态:\n');
-fprintf('  管号  出口焓(kJ/kg)  出口压力(MPa)  出口温度(K)   压降(Pa)   换热量(W)\n');
-fprintf('  ----  -------------  --------------  -----------  ---------  ----------\n');
+fprintf('  管号  流量(kg/s)  出口焓(kJ/kg)  出口压力(MPa)  出口温度(K)   压降(Pa)   换热量(W)\n');
+fprintf('  ----  ----------  -------------  --------------  -----------  ---------  ----------\n');
 for t = 1:Tube_num
-    fprintf('  %4d  %13.2f  %14.6f  %11.2f  %9.2f  %10.1f\n', ...
-        t, h_R_out(end,t), p_R_out(end,t), T_R_out(t), ...
+    fprintf('  %4d  %10.6f  %13.2f  %14.6f  %11.2f  %9.2f  %10.1f\n', ...
+        t, mdot_R(t), h_R_out(end,t), p_R_out(end,t), T_R_out(t), ...
         dp_tube(t)*1e6, heatload_tube(t));
 end
 fprintf('\n');
