@@ -78,6 +78,13 @@ u0_history{1} = u0;
 has_loops = ~isempty(N) && size(N,2) > 0;
 
 %% Phase 1: 仅热力扫描 + 提取压阻，迭代至流量稳定
+% 压力场全程不变（p_R_inlet），9 项饱和物性所有 CV/迭代共用
+sat_global = cell(1,9);
+sat_global{1} = Prop_handle.v_liq(0, p_R_inlet);   sat_global{2} = Prop_handle.v_vap(1, p_R_inlet);
+sat_global{3} = Prop_handle.Pr_liq(0, p_R_inlet);  sat_global{4} = Prop_handle.Pr_vap(1, p_R_inlet);
+sat_global{5} = Prop_handle.Nu_liq(0, p_R_inlet);  sat_global{6} = Prop_handle.Nu_vap(1, p_R_inlet);
+sat_global{7} = Prop_handle.k_liq(0, p_R_inlet);   sat_global{8} = Prop_handle.k_vap(1, p_R_inlet);
+sat_global{9} = Prop_handle.T_liq(0, p_R_inlet);
 tic
 if has_loops
     for i1 = 1:loopmax
@@ -97,7 +104,7 @@ if has_loops
             mdot_R, mdot_MA, TCinf, GeoCondition, ...
             CV_num, row, Prop_handle, ...
             h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
-            residual_max, R_coef);
+            residual_max, R_coef, sat_global);
         tube_cal = tube_cal + 1;
         snapshot_h_out{tube_cal} = h_R_out;
         snapshot_p_out{tube_cal} = p_R_out;
@@ -352,7 +359,7 @@ if solver_flag == 1
         inlet_props = cache_R_in;
     else
         inlet_props = cell(1,14);
-        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_in);
+        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_global);
     end
     if nargin >= 10 && ~isempty(cache_MA_in)
         inlet_air_props = cache_MA_in;
@@ -425,7 +432,7 @@ elseif solver_flag == 2
         inlet_props = cache_R_in;
     else
         inlet_props = cell(1,14);
-        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_in);
+        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_global);
     end
     if nargin >= 10 && ~isempty(cache_MA_in)
         inlet_air_props = cache_MA_in;
@@ -465,8 +472,9 @@ end
 
 
 
-function  [F, dp_CV, cache_R_out, cache_MA_out] = alg_phase1(x0,BD,InletBD,GeoCondition,CV,N,Prop_handle,cache_R_in,cache_MA_in)
-% 与 alg(solver_flag=1) 相同，额外返回每个 CV 的压降 dp_CV (Pa)
+function  [F, dp_CV, cache_R_out, cache_MA_out] = alg_phase1(x0,BD,InletBD,GeoCondition,CV,N,Prop_handle,cache_R_in,cache_MA_in,sat_global)
+% 与 alg(solver_flag=1) 相同，额外返回 dp_CV (Pa)
+% Phase1 压力场不变，sat_global 全局预计算，所有 CV 共用
 
 loopmax = 100;
 residual_Energy = 1e-3;
@@ -494,18 +502,11 @@ A_MA_CV = A_MA/CV/Tube_num;
 x0_R  = [x0(1);BD(1)];
 x0_MA = [x0(2);BD(2)];
 
-sat_in = cell(1,9);
-sat_in{1} = Prop_handle.v_liq(0, p_R_inlet); sat_in{2} = Prop_handle.v_vap(1, p_R_inlet);
-sat_in{3} = Prop_handle.Pr_liq(0, p_R_inlet); sat_in{4} = Prop_handle.Pr_vap(1, p_R_inlet);
-sat_in{5} = Prop_handle.Nu_liq(0, p_R_inlet); sat_in{6} = Prop_handle.Nu_vap(1, p_R_inlet);
-sat_in{7} = Prop_handle.k_liq(0, p_R_inlet); sat_in{8} = Prop_handle.k_vap(1, p_R_inlet);
-sat_in{9} = Prop_handle.T_liq(0, p_R_inlet);
-
 if nargin >= 8 && ~isempty(cache_R_in)
     inlet_props = cache_R_in;
 else
     inlet_props = cell(1,14);
-    [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_in);
+    [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_global);
 end
 if nargin >= 9 && ~isempty(cache_MA_in)
     inlet_air_props = cache_MA_in;
@@ -574,7 +575,7 @@ function [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
     mdot_R, mdot_MA, TCinf, GeoCondition, ...
     CV_num, row, Prop_handle, ...
     h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
-    residual_max, R_coef)
+    residual_max, R_coef, sat_global)
 
 nTubes = length(tubePaths);
 R_flow  = zeros(nTubes, 1);
@@ -632,7 +633,7 @@ for i2 = 1:nTubes
         end
 
         N1 = ceil(tube / row);
-        [xout, dp_CV, cache_R_out, cache_MA_out] = alg_phase1(x0, BD, InBD, GeoCondition, CV_num, N1, Prop_handle, cache_R_in, cache_MA_in);
+        [xout, dp_CV, cache_R_out, cache_MA_out] = alg_phase1(x0, BD, InBD, GeoCondition, CV_num, N1, Prop_handle, cache_R_in, cache_MA_in, sat_global);
         residual_max = max(max(abs(xout(1:2) - x0) ./ x0), residual_max);
 
         h_R_out_tube(i3) = xout(1);
