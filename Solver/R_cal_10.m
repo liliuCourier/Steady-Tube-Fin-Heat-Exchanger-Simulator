@@ -16,10 +16,26 @@ h_CV = (hin + hout)/2;
 p_CV = (pin + pout)/2;
 
 % 物性调用
-[Din_CV, Prin_CV, Nuin_CV, Tin_CV, xin_CV, kin_CV] = Prop1(pin,hin,Prop_handle);
-[Dout_CV, Prout_CV, Nuout_CV, Tout_CV, xout_CV, kout_CV] = Prop1(pout,hout,Prop_handle);
-[D_CV, Pr_CV, Nu_CV, T_CV, x_CV, k_CV, vsatliq_CV,...
-    vsatvap_CV, Prsatliq_CV, Prsatvap_CV, Nusatliq_CV, Nusatvap_CV, ksatliq_CV, ksatvap_CV] = Prop1(p_CV, h_CV,Prop_handle);
+[Din_CV, Prin_CV, Nuin_CV, Tin_CV, xin_CV, kin_CV, vsatliq_in,...
+    vsatvap_in, Prsatliq_in, Prsatvap_in, Nusatliq_in, Nusatvap_in, ksatliq_in, ksatvap_in] = Prop1(pin,hin,Prop_handle);
+
+[Dout_CV, Prout_CV, Nuout_CV, Tout_CV, xout_CV, kout_CV,vsatliq_out,...
+    vsatvap_out, Prsatliq_out, Prsatvap_out, Nusatliq_out, Nusatvap_out, ksatliq_out, ksatvap_out] = Prop1(pout,hout,Prop_handle);
+
+D_CV = (Din_CV + Dout_CV)/2;
+Pr_CV = (Prin_CV + Prout_CV)/2;
+Nu_CV = (Nuin_CV + Nuout_CV)/2;
+T_CV = (Tin_CV + Tout_CV)/2;
+x_CV = (xin_CV + xout_CV)/2;
+k_CV = (kin_CV + kout_CV)/2;
+vsatliq_CV = (vsatliq_in + vsatliq_out)/2;
+vsatvap_CV = (vsatvap_in + vsatvap_out)/2;
+Prsatliq_CV = (Prsatliq_in + Prsatliq_out)/2;
+Prsatvap_CV = (Prsatvap_in + Prsatvap_out)/2;
+Nusatliq_CV = (Nusatliq_in + Nusatliq_out)/2;
+Nusatvap_CV = (Nusatvap_in + Nusatvap_out)/2;
+ksatliq_CV = (ksatliq_in + ksatliq_out)/2;
+ksatvap_CV = (ksatvap_in + ksatvap_out)/2;
 
 % 物性调用
 veloctiy_CV = (mdot/D_CV)/S;
