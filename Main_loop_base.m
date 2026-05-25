@@ -359,7 +359,7 @@ if solver_flag == 1
         inlet_props = cache_R_in;
     else
         inlet_props = cell(1,14);
-        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_global);
+        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_in);
     end
     if nargin >= 10 && ~isempty(cache_MA_in)
         inlet_air_props = cache_MA_in;
@@ -432,7 +432,7 @@ elseif solver_flag == 2
         inlet_props = cache_R_in;
     else
         inlet_props = cell(1,14);
-        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_global);
+        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_in);
     end
     if nargin >= 10 && ~isempty(cache_MA_in)
         inlet_air_props = cache_MA_in;
