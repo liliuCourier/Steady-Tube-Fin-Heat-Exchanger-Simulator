@@ -661,8 +661,8 @@ for i2 = 1:nTubes
     T_MA_in = [T_MA_inlet * ones(CV_num, row), T_MA_out(:, 1:end-row)];
     p_MA_in = [p_MA_inlet * ones(CV_num, row), p_MA_out(:, 1:end-row)];
 
-    dp_tube(tube) = dp_acc;
-    R_flow(tube)  = dp_acc ./ (mdot_R_tube .^ R_coef);
+    dp_tube(tube) = dp_acc / 1e6;                      % Pa → MPa
+    R_flow(tube)  = dp_acc ./ (mdot_R_tube .^ R_coef);  % Pa / (kg/s)^e
 end
 end
 
