@@ -54,9 +54,14 @@
 
 **为何改指数：** Domanski (1989) 最早采用 $\Delta p = R \cdot m^{1.75}$（湍流 Blasius 标度），Ding (2004) 沿用。$1.81$ 比 $2.0$ 更贴近管内流动的物理标度，且配合 `heatPaths` 统一路径，避免了 `pdropPaths` 额外扫描带来的计算开销。
 
-### 5/25 性能优化
+### 性能优化历史
 
-`R_cal_10.m` 物性平均策略优化：旧方案每控制容积调用 `Prop1` 三次（进口状态、出口状态、平均 (p,h) 状态），现改为仅在进出口各调用一次，14 个物性参数直接取进出口值的算术平均。省去第三次 REFPROP 查询，以微小精度损失换取约 1/3 的物性调用开销削减。
+| 日期 | 提交 | 优化内容 | 物性调用削减 | 分支 |
+|------|------|----------|-------------|------|
+| 5/25 | `5f39210` | **入口物性缓存**：`alg` 不动点循环前预计算入口 `Prop1`，循环内复用。入口 `(p,h)` 在迭代中不变，原先每轮重复查询 | ~50%（每 CV 迭代从 2 次→1 次） | `perf-property-cache` |
+| 5/25 | `3a94197` | **物性算术平均**：取消平均态 `(p_CV,h_CV)` 处的第三次 `Prop1` 调用，14 个物性取进出口算术平均 | ~33%（每 CV 从 3 次→2 次） | `auto-circuit` |
+
+**当前状态**：两项合计，`R_cal_10` 每 CV 每迭代从原先 3 次 Prop1（进口/出口/平均态）降为 1 次（仅出口），REFROP 调用总次数降为原先的 1/3。已知子函数 0.417s 耗时中 0.35s 在物性调用，预计子函数耗时降至 ~0.18s。
 
 ### 仿真流程
 
@@ -158,6 +163,7 @@ Prop_handle = Prop_load(refprop_location, R, 1e-3, 5.5, 80, 510, 100, 25, 25);
 
 | SHA | 日期 | 说明 |
 |-----|------|------|
+| `5f39210` | 5/25 | perf: 入口物性缓存 — alg 循环内消除冗余 Prop1 调用 |
 | `3a94197` | 5/25 | R_cal_10: 物性平均策略优化 — 取消第三次 Prop1 调用 |
 | `7cddae7` | 5/22 | PostProcessing: 修复 SceneNode 警告 — LaTeX 改 TeX |
 | `e518286` | 5/22 | Main_loop_base: 两阶段环路优先求解器 (Phase1+Phase2) |
@@ -254,9 +260,14 @@ Solver algorithm update: variable-exponent pressure-resistance model + unified h
 
 **Why change the exponent:** Domanski (1989) first adopted $\Delta p = R \cdot m^{1.75}$ (turbulent Blasius scaling), followed by Ding (2004). $1.81$ is closer to the physical scaling of in-tube flow than $2.0$, and the unified heatPaths scan avoids the extra computational overhead of the separate pdropPaths pass.
 
-### 5/25 Performance Optimization
+### Performance Optimization History
 
-`R_cal_10.m` property averaging strategy optimized: previously called `Prop1` three times per control volume (inlet, outlet, and average (p,h) states). Now calls `Prop1` only at inlet and outlet, computing arithmetic means of all 14 properties directly. This eliminates the third REFPROP query, trading negligible accuracy loss for roughly a 1/3 reduction in property-call overhead.
+| Date | Commit | Optimization | Prop1 Calls Reduced | Branch |
+|------|--------|-------------|-------------------|--------|
+| 5/25 | `5f39210` | **Inlet property cache**: Pre-compute inlet `Prop1` before `alg` fixed-point loop; inlet `(p,h)` unchanged during iteration | ~50% (2→1 per CV iteration) | `perf-property-cache` |
+| 5/25 | `3a94197` | **Arithmetic averaging**: Eliminated 3rd `Prop1` call at average `(p_CV,h_CV)` state; 14 properties now arithmetic means of inlet/outlet | ~33% (3→2 per CV) | `auto-circuit` |
+
+**Current status**: Combined, `R_cal_10` per-CV per-iteration Prop1 calls reduced from 3 (inlet/outlet/average) to 1 (outlet only). Total REFPROP queries at ~1/3 of original. With 0.35s of 0.417s sub-function time spent on property calls, estimated sub-function time drops to ~0.18s.
 
 ### Simulation Workflow
 
