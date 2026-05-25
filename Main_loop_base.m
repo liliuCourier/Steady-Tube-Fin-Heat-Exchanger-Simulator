@@ -1,5 +1,5 @@
 % Main_loop_base — 环路优先求解器 (Demo1.12 同步)
-% Phase1: 仅热力扫描 + 提取压阻 + 流量更新，迭代至流量稳定
+% Phase1: 仅热力扫描 + 提取压阻 + 流量更新（不更新压力场），迭代至流量稳定
 % Phase2: 完整热力+压力+流量重分配，与 Main 一致
 % 运行前请先执行 PreProcessing
 
@@ -86,7 +86,7 @@ if has_loops
         iter_mdot{i1}  = mdot_R;
         iter_dp{i1}    = dp_tube;
 
-        % 热力扫描（同步提取各 CV 压阻，更新压力场）
+        % 热力扫描（提取各 CV 压阻，压力场不变）
         residual_max = 0;
         [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
          p_R_in, p_R_out, p_MA_in, p_MA_out, ...
@@ -129,7 +129,7 @@ if has_loops
 
         % Phase1 步出判据：前后两次流量相对变化 < 1e-3
         delta_mdot = max(abs(mdot_R - mdot_R_prev) ./ mdot_R);
-        if i1 > 1 && delta_mdot < 1e-2
+        if i1 > 1 && delta_mdot < 1e-1
             fprintf('Phase1 流量稳定 (delta_mdot=%.2e)，进入 Phase2\n', delta_mdot);
             break
         end
@@ -156,7 +156,7 @@ if has_loops
             h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
             mdot_R, mdot_MA, TCinf, GeoCondition, ...
-            CV_num, row, 1, Prop_handle, ...
+            CV_num, row, 2, Prop_handle, ...
             h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
             residual_max, dp_tube);
         tube_cal = tube_cal + 1;
@@ -164,7 +164,7 @@ if has_loops
         snapshot_p_out{tube_cal} = p_R_out;
         snapshot_mdot{tube_cal}  = mdot_R;
         snapshot_dp{tube_cal}    = dp_tube;
-        snapshot_flag(tube_cal)  = 1;
+        snapshot_flag(tube_cal)  = 2;
         snapshot_iter(tube_cal)  = i2;
 
         % 压力扫描
@@ -175,7 +175,7 @@ if has_loops
             h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
             mdot_R, mdot_MA, TCinf, GeoCondition, ...
-            CV_num, row, 2, Prop_handle, ...
+            CV_num, row, 1, Prop_handle, ...
             h_R_inlet, p_R_inlet, T_MA_inlet, p_MA_inlet, ...
             residual_max, dp_tube);
         tube_cal = tube_cal + 1;
@@ -183,7 +183,7 @@ if has_loops
         snapshot_p_out{tube_cal} = p_R_out;
         snapshot_mdot{tube_cal}  = mdot_R;
         snapshot_dp{tube_cal}    = dp_tube;
-        snapshot_flag(tube_cal)  = 2;
+        snapshot_flag(tube_cal)  = 1;
         snapshot_iter(tube_cal)  = i2;
 
         % 流量更新 — Newton 迭代
@@ -638,9 +638,6 @@ for i2 = 1:nTubes
         h_R_out_tube(i3) = xout(1);
         dp_acc = dp_acc + dp_CV;
 
-        % 同步推进压力场
-        p_R_out_tube(i3) = p_R_in_tube(i3) - dp_CV/1e6;
-
         if flowDirection == 1
             T_MA_out(i3, tube) = xout(2);
         else
@@ -648,7 +645,6 @@ for i2 = 1:nTubes
         end
         if i3 < CV_num
             h_R_in_tube(i3 + 1) = xout(1);
-            p_R_in_tube(i3 + 1) = p_R_out_tube(i3);
             cache_R_in = cache_R_out;  % 工质沿管流动，出口→下游入口
             % 空气横掠管束，同管所有 CV 入口相同，不转发 cache_MA
         end
@@ -656,8 +652,6 @@ for i2 = 1:nTubes
 
     h_R_out(:, tube) = h_R_out_tube;
     h_R_in(:, tube)  = h_R_in_tube;
-    p_R_out(:, tube) = p_R_out_tube;
-    p_R_in(:, tube)  = p_R_in_tube;
     T_MA_in = [T_MA_inlet * ones(CV_num, row), T_MA_out(:, 1:end-row)];
     p_MA_in = [p_MA_inlet * ones(CV_num, row), p_MA_out(:, 1:end-row)];
 
