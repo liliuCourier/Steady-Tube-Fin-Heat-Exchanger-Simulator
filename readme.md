@@ -54,31 +54,74 @@
 
 **为何改指数：** Domanski (1989) 最早采用 $\Delta p = R \cdot m^{1.75}$（湍流 Blasius 标度），Ding (2004) 沿用。$1.81$ 比 $2.0$ 更贴近管内流动的物理标度，且配合 `heatPaths` 统一路径，避免了 `pdropPaths` 额外扫描带来的计算开销。
 
-### 性能优化历程
+### 5/25 Demo1.12
 
-三步优化，按物性计算的冗余消除层次递进：
-
-**1. 控制体平均物性 — 取消平均态 Prop1 调用** (`3a94197`)
-
-进口算一次 Prop1，出口算一次 Prop1，控制体平均物性直接用进出口值的算术平均，而非在平均 (p,h) 处再调一次物性。每 CV 从 3 次 Prop1 降为 2 次。
-
-> 适用：热力扫描 ✓ | 压力扫描 ✓
-
-**2. 入口物性缓存 — 不动点迭代内复用** (`5f39210` / `319d30e`)
-
-单控制体不动点迭代中，入口 (p,h) 始终保持不变，但原先每轮迭代都重复查询入口物性。改为循环前预计算一次，循环内所有轮次复用。工质侧缓存全部 14 项 + 空气侧缓存 6 项（hair/Prair/visair/kair/cpair/vin）。每 CV 每迭代从 2 次 Prop1 降为 1 次（仅出口）。
-
-> 适用：热力扫描 ✓ | 压力扫描 ✓
-
-**3. 饱和物性缓存 — 直达 Prop1 跳过 REFPROP 插值** (`45768be`)
-
-热力扫描中压力场固定，p_out 不变。8 个饱和物性（vsatliq/vsatvap/Prsatliq/Prsatvap/Nusatliq/Nusatvap/ksatliq/ksatvap）+ Tsatliq 仅取决于压力。从入口缓存中取饱和值作为出口饱和近似（dp~Pa 级，p_in≈p_out），传入 Prop1 替代 9 次 REFPROP 插值函数句柄调用。两相区体物性（D/Pr/Nu/k/T）由饱和值 + 干度 x 直接推导，几乎零额外开销。
-
-> 适用：热力扫描 ✓ | 压力扫描 ✗（p_out 在迭代中变化）
+本次更新聚焦**稳定性**与**计算速度**两大方向：消除迭代断点解决振荡问题，物性缓存复用大幅削减 REFPROP 调用开销。
 
 ---
 
-**累计效果**：热力扫描 `R_cal_10` 3→1 次 Prop1/CV/迭代 + 出口 Prop1 省 9 次插值；压力扫描 3→1 次 Prop1。空气侧省 6 项入口计算。跨 CV 出口转发经实测存在收敛一致性问题已回退。预计子函数耗时 0.417s → ~0.12s。
+#### A. 稳定性优化 — 消除迭代断点
+
+`R_cal_10.m` 中两处关联式切换原先采用硬判断（`if` 跳变），不动点迭代时状态量在阈值附近反复跨越，导数不连续引发振荡。改为线性权重光滑过渡：
+
+**A1. 层流-湍流 Nu 过渡（Re 1000→1200）**
+
+Gnielinski 公式仅适用于 Re>1000 湍流区，层流区 Nu 取常数 3.66。原先 `if Re>1000` 硬切换，Re 在 1000 附近波动致 Nu 反复跳变。
+
+```
+w = (Re - 1000) / 200             % [1000,1200] → [0,1]
+Nu = 3.66 × (1-w) + Nu_gn × w    % 层流主导 → 湍流主导
+```
+
+| Re | w | 层流项占比 | 效果 |
+|----|---|----------|------|
+| ≤1000 | 0 | 100% | 纯层流 Nu=3.66 |
+| 1100 | 0.5 | 50% | 等权混合 |
+| ≥1200 | 1 | 0% | 纯 Gnielinski |
+
+**A2. 单相-两相换热系数过渡（x 0→0.05 / 0.95→1）**
+
+Cavallini-Zecchin 两相公式与 Gnielinski 单相公式在干度 x=0 和 x=1 处切换，原先直接跳变。改为两个过渡带，各宽 Δx=0.05：
+
+```
+液相→两相 (x ∈ [0, 0.05]):
+  w = x / 0.05                     % [0, 0.05] → [0, 1]
+  h = h_1P × (1-w) + h_2P × w      % 单相主导 → 两相主导
+
+两相→气相 (x ∈ [0.95, 1]):
+  w = (x - 0.95) / 0.05            % [0.95, 1] → [0, 1]
+  h = h_mix × (1-w) + h_1P × w     % 两相主导 → 单相主导
+```
+
+**设计原则**：两处均用线性权重——过渡带足够窄（200 Re / 0.05 干度），线性即消除振荡，无需高阶光滑，计算开销最低。
+
+---
+
+#### B. 性能优化 — 物性缓存复用
+
+物性调用（REFPROP）占子函数 0.417s 中的 0.35s。三步按冗余消除层次递进：
+
+**B1. 控制体平均物性 — 取消平均态 Prop1**
+
+进口、出口各算一次 Prop1，控制体平均物性直接用进出口值的算术平均，不再在平均 (p,h) 处第三次调用物性。每 CV 从 3→2 次 Prop1。
+
+> 适用：热力扫描 ✓ | 压力扫描 ✓
+
+**B2. 入口物性缓存 — 不动点迭代内复用**
+
+单 CV 不动点迭代中入口 (p,h) 不变，原先每轮重复查询。改为循环前预计算一次循环内复用。工质侧 14 项 + 空气侧 6 项。每 CV 每迭代 2→1 次 Prop1（仅出口）。
+
+> 适用：热力扫描 ✓ | 压力扫描 ✓
+
+**B3. 饱和物性直达 Prop1 — 跳过 REFPROP 插值**
+
+热力扫描压力场固定，9 个饱和物性仅取决于 p。sat_in 从 Prop_handle 预计算一次，同时传入入口 Prop1（跳 9 次插值）和出口 sat_cache（每轮迭代复用）。两相区体物性由饱和值+x 推导，几乎零额外开销。
+
+> 适用：热力扫描 ✓ | 压力扫描 ✗（p_out 变化）
+
+---
+
+**累计效果**：热力扫描 3→1 次 Prop1/CV/迭代 + 每出口 Prop1 省 9 次插值 + 每入口 Prop1 省 9 次插值；压力扫描 3→1 次 Prop1。跨 CV 出口转发经实测存在收敛一致性问题已回退。预计子函数耗时 0.417s → ~0.10s。
 
 ### 仿真流程
 
@@ -158,48 +201,7 @@ Prop_handle = Prop_load(refprop_location, R, 1e-3, 5.5, 80, 510, 100, 25, 25);
 3. 配置 MATLAB 的 C/C++ 编译器：在 MATLAB 中运行 `mex -setup`
 4. 将 MATLAB Interface for REFPROP and CoolProp 添加至 MATLAB 路径
 
-#### 2. 光滑过渡 — 消除迭代断点
-
-`R_cal_10.m` 中两处采用线性权重光滑过渡，消除硬切换在不动点迭代中引发的振荡：
-
-**2a. 层流-湍流 Nu 过渡（Re 1000→1200）**
-
-Gnielinski 公式仅适用于 Re>1000 的湍流区，层流区 Nu 取常数 3.66。原先 `if Re>1000` 硬切换，Re 在 1000 附近波动时 Nu 反复跳变，迭代无法稳定。
-
-改为 Re ∈ [1000, 1200] 线性混合：
-
-```
-w = (Re - 1000) / 200             % [1000,1200] → [0,1]
-Nu = 3.66 × (1-w) + Nu_gn × w    % 层流主导 → 湍流主导
-```
-
-| Re | w | 层流项占比 | 效果 |
-|----|---|----------|------|
-| ≤1000 | 0 | 100% | 纯层流 Nu=3.66 |
-| 1100 | 0.5 | 50% | 等权混合 |
-| ≥1200 | 1 | 0% | 纯 Gnielinski |
-
-**2b. 单相-两相换热系数过渡（x_CV 0→0.05 和 0.95→1）**
-
-Cavallini-Zecchin 两相公式与 Gnielinski 单相公式在不同干度 x 下分别适用。原先直接切换，x 跨过 0 或 1 时 h 产生跳变。
-
-改为液相→两相、两相→气相两个过渡带，各宽 Δx=0.05：
-
-```
-液相→两相 (x ∈ [0, 0.05]):
-  w = x / 0.05                     % [0, 0.05] → [0, 1]
-  h = h_1P × (1-w) + h_2P × w      % 单相主导 → 两相主导
-
-两相→气相 (x ∈ [0.95, 1]):
-  w2 = (x - 0.95) / 0.05           % [0.95, 1] → [0, 1]
-  h = h_mix × (1-w2) + h_1P × w2   % 两相主导 → 单相主导
-```
-
-**设计原则**：两处均采用线性权重而非 Hermite 高阶光滑，因为过渡带足够窄（200 Re 单位 / 0.05 干度），线性即可消除迭代振荡，且计算开销最低。
-
----
-
-#### 3. 关联式选择
+#### 2. 关联式选择
 
 不同的关联式会产生不同的结果。具体的关联式请在 `R_cal_10.m`（工质侧求解器）和 `DryA_cal_10.m`（空气侧求解器）中的"关联式区域"自己设置。
 
@@ -397,48 +399,7 @@ This program calls REFPROP through the **MATLAB Interface for REFPROP and CoolPr
 3. Configure MATLAB C/C++ compiler: run `mex -setup` in MATLAB
 4. Add the MATLAB Interface for REFPROP and CoolProp to the MATLAB path
 
-#### 2. Smooth transitions — eliminating iteration discontinuities
-
-`R_cal_10.m` uses linear-weight smoothing at two transition points to prevent hard switches from causing fixed-point iteration oscillation:
-
-**2a. Laminar-turbulent Nu transition (Re 1000→1200)**
-
-Gnielinski correlation applies only for Re>1000 (turbulent); below that, Nu=3.66 (laminar constant). The original `if Re>1000` hard switch caused Nu to jump when Re oscillated near 1000, destabilizing the iteration.
-
-Now: linear blend over Re ∈ [1000, 1200]:
-
-```
-w = (Re - 1000) / 200             % [1000,1200] → [0,1]
-Nu = 3.66 × (1-w) + Nu_gn × w    % laminar-dominated → turbulent-dominated
-```
-
-| Re | w | Laminar share | Result |
-|----|---|--------------|--------|
-| ≤1000 | 0 | 100% | Pure laminar Nu=3.66 |
-| 1100 | 0.5 | 50% | Equal blend |
-| ≥1200 | 1 | 0% | Pure Gnielinski |
-
-**2b. Single-phase to two-phase HTC transition (x_CV 0→0.05 and 0.95→1)**
-
-Cavallini-Zecchin (two-phase) and Gnielinski (single-phase) HTC correlations apply in different quality ranges. Direct switching at x=0 or x=1 caused discontinuous jumps in heat transfer coefficient.
-
-Two transition bands, each Δx=0.05 wide:
-
-```
-Liquid → two-phase (x ∈ [0, 0.05]):
-  w = x / 0.05                     % [0, 0.05] → [0, 1]
-  h = h_1P × (1-w) + h_2P × w      % single-phase → two-phase
-
-Two-phase → vapor (x ∈ [0.95, 1]):
-  w2 = (x - 0.95) / 0.05           % [0.95, 1] → [0, 1]
-  h = h_mix × (1-w2) + h_1P × w2   % two-phase → single-phase
-```
-
-**Design rationale**: Linear weighting is used in both cases rather than higher-order (e.g. Hermite) smoothing. The transition bands are narrow enough (200 Re units / 0.05 quality) that linear interpolation eliminates oscillation with minimal computational cost.
-
----
-
-#### 3. Correlation selection
+#### 2. Correlation selection
 
 Different correlations lead to different results. Please set the desired correlations in the "correlation section" of `R_cal_10.m` (refrigerant-side solver) and `DryA_cal_10.m` (air-side solver).
 
