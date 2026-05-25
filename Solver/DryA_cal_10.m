@@ -135,5 +135,6 @@ dEF_air = mdot.*(h_in - h_out)  ;
         out{4} = cp_CV;
         out{5} = dp;
         out{6} = F_dp;
+        out{7} = {h_air_out, Pr_air_out, vis_air_out, k_air_out, cp_air_out, vout};
 
 end

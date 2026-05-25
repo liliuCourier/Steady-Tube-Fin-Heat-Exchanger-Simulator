@@ -132,5 +132,7 @@ out{3} = h_R;
 out{4} = dp;
 out{5} = dEF;
 out{6} = T_CV;
+out{7} = {Dout_CV, Prout_CV, Nuout_CV, Tout_CV, xout_CV, kout_CV, vsatliq_out, ...
+          vsatvap_out, Prsatliq_out, Prsatvap_out, Nusatliq_out, Nusatvap_out, ksatliq_out, ksatvap_out};
 
 end

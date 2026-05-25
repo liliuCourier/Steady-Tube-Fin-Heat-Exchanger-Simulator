@@ -242,7 +242,7 @@ end
 
 
 
-function  F = alg(x0,BD,InletBD,GeoCondition,CV,N,solver_flag,Prop_handle)
+function  [F, cache_R_out, cache_MA_out] = alg(x0,BD,InletBD,GeoCondition,CV,N,solver_flag,Prop_handle,cache_R_in,cache_MA_in)
 
 % 迭代上限
 loopmax = 100;
@@ -273,6 +273,7 @@ if solver_flag == 3
     end
 
     F = [dp_R,x0(1)];
+    cache_R_out = {}; cache_MA_out = {};
     return
 end
 
@@ -304,21 +305,29 @@ A_MA_CV = A_MA/CV/Tube_num;
 
 
 if solver_flag == 1
-    
+
     x0_R =  [x0(1);BD(1)];
     x0_MA = [x0(2);BD(2)];
 
-    % inlet property cache: inlet p/h unchanged during fixed-point iteration
-    inlet_props = cell(1,14);
-    [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle);
-    Ra = 287.047;
-    inlet_air_props = cell(1,6);
-    inlet_air_props{1} = Prop_handle.hair(T_MA_inlet);
-    inlet_air_props{2} = Prop_handle.Prair(T_MA_inlet);
-    inlet_air_props{3} = Prop_handle.visair(T_MA_inlet);
-    inlet_air_props{4} = Prop_handle.kair(T_MA_inlet);
-    inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
-    inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
+    % inlet property cache: use forwarded cache from upstream CV if available
+    if nargin >= 9 && ~isempty(cache_R_in)
+        inlet_props = cache_R_in;
+    else
+        inlet_props = cell(1,14);
+        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle);
+    end
+    if nargin >= 10 && ~isempty(cache_MA_in)
+        inlet_air_props = cache_MA_in;
+    else
+        Ra = 287.047;
+        inlet_air_props = cell(1,6);
+        inlet_air_props{1} = Prop_handle.hair(T_MA_inlet);
+        inlet_air_props{2} = Prop_handle.Prair(T_MA_inlet);
+        inlet_air_props{3} = Prop_handle.visair(T_MA_inlet);
+        inlet_air_props{4} = Prop_handle.kair(T_MA_inlet);
+        inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
+        inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
+    end
 
     for i = 1:loopmax
         out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props);
@@ -354,25 +363,34 @@ if solver_flag == 1
         end
     end
 
+    cache_R_out = out{7};
+    cache_MA_out = out_MA{7};
     F = [x0_R(1);x0_MA(1)];
 
 elseif solver_flag == 2
-    
 
     x0_R  = [BD(1);x0(1)];
     x0_MA = [BD(2);x0(2)];
 
-    % inlet property cache: inlet p/h unchanged during fixed-point iteration
-    inlet_props = cell(1,14);
-    [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle);
-    Ra = 287.047;
-    inlet_air_props = cell(1,6);
-    inlet_air_props{1} = Prop_handle.hair(T_MA_inlet);
-    inlet_air_props{2} = Prop_handle.Prair(T_MA_inlet);
-    inlet_air_props{3} = Prop_handle.visair(T_MA_inlet);
-    inlet_air_props{4} = Prop_handle.kair(T_MA_inlet);
-    inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
-    inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
+    % inlet property cache: use forwarded cache from upstream CV if available
+    if nargin >= 9 && ~isempty(cache_R_in)
+        inlet_props = cache_R_in;
+    else
+        inlet_props = cell(1,14);
+        [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle);
+    end
+    if nargin >= 10 && ~isempty(cache_MA_in)
+        inlet_air_props = cache_MA_in;
+    else
+        Ra = 287.047;
+        inlet_air_props = cell(1,6);
+        inlet_air_props{1} = Prop_handle.hair(T_MA_inlet);
+        inlet_air_props{2} = Prop_handle.Prair(T_MA_inlet);
+        inlet_air_props{3} = Prop_handle.visair(T_MA_inlet);
+        inlet_air_props{4} = Prop_handle.kair(T_MA_inlet);
+        inlet_air_props{5} = Prop_handle.cpair(T_MA_inlet);
+        inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
+    end
 
     for i = 1:loopmax
 
@@ -394,6 +412,8 @@ elseif solver_flag == 2
         end
 
     end
+    cache_R_out = out{7};
+    cache_MA_out = out_MA{7};
     F = [x0_R(2);x0_MA(2)];
 end
 
@@ -443,6 +463,7 @@ for i2 = 1:nTubes
 
     flowDirection = TCinf.FlowDirection(tube);
 
+    cache_R_in = {}; cache_MA_in = {};  % reset per-tube
     for i3 = 1:CV_num
         rev = CV_num + 1 - i3;
 
@@ -473,8 +494,14 @@ for i2 = 1:nTubes
         end
 
         N1 = ceil(tube / row);
-        xout = alg(x0, BD, InBD, GeoCondition, CV_num, N1, solver_flag, Prop_handle);
+        [xout, cache_R_out, cache_MA_out] = alg(x0, BD, InBD, GeoCondition, CV_num, N1, solver_flag, Prop_handle, cache_R_in, cache_MA_in);
         residual_max = max(max(abs(xout - x0) ./ x0), residual_max);
+
+        % forward outlet cache to next CV within same tube
+        if i3 < CV_num
+            cache_R_in = cache_R_out;
+            cache_MA_in = cache_MA_out;
+        end
 
         if solver_flag == 1
             h_R_out_tube(i3) = xout(1);
