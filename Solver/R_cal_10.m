@@ -67,7 +67,7 @@ veloctiy_CV = (mdot/D_CV)/S;
 
 %% Correlation area 关联式区域
 
-Re_1P = abs(veloctiy_CV)*D_inner./(Nu_CV*1e-6);
+Re_1P = abs(veloctiy_CV)*D_inner/(Nu_CV*1e-6);
 Re_2P = abs(mdot).*(1-x_CV + x_CV.*sqrt(vsatvap_CV./vsatliq_CV))*D_inner/S./(Nusatliq_CV*1e-6./vsatliq_CV);
 
 f_CV =      (-1.8*log10(6.9./Re_1P+(r/3.7)^1.11)).^(-2);
