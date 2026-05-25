@@ -88,6 +88,61 @@ else
     grid on;
 end
 
+%% 3.7 压阻系数 R_flow 收敛轨迹
+if has_loops
+    % 从快照反算每次扫描后的 R_flow = dp*1e6 / m^e
+    R_flow_history = cell(tube_cal, 1);
+    for j = 1:tube_cal
+        dp_snap = snapshot_dp{j} * 1e6;            % Pa
+        m_snap  = snapshot_mdot{j};
+        R_flow_history{j} = dp_snap ./ (m_snap .^ R_coef);
+    end
+    R_flow_final = R_flow_history{tube_cal};        % 最终收敛值
+
+    figure('Name', '压阻收敛轨迹', 'NumberTitle', 'off');
+
+    % --- 子图1：各管 R_flow 绝对值变化 ---
+    subplot(1, 2, 1);
+    n_tubes = length(R_flow_final);
+    colors = lines(n_tubes);
+    for t = 1:n_tubes
+        R_t = zeros(tube_cal, 1);
+        for j = 1:tube_cal
+            R_t(j) = R_flow_history{j}(t);
+        end
+        semilogy(1:tube_cal, R_t, '.-', 'Color', colors(t,:), ...
+            'LineWidth', 1.0, 'MarkerSize', 5);
+        hold on;
+    end
+    xlabel('管扫描累计次数');
+    ylabel('R_{flow} (Pa·s^e/kg^e)');
+    title(sprintf('各管压阻系数变化 (%d次扫描)', tube_cal));
+    grid on;
+    hold off;
+
+    % --- 子图2：相对最终值的误差 ---
+    subplot(1, 2, 2);
+    for t = 1:n_tubes
+        R_t = zeros(tube_cal, 1);
+        for j = 1:tube_cal
+            R_t(j) = R_flow_history{j}(t);
+        end
+        err = abs(R_t - R_flow_final(t)) / R_flow_final(t);
+        err = max(err, eps);
+        semilogy(1:tube_cal, err, '.-', 'Color', colors(t,:), ...
+            'LineWidth', 1.0, 'MarkerSize', 5);
+        hold on;
+    end
+    yline(1e-3, 'k--', '1e-3', 'LineWidth', 0.8);
+    xlabel('管扫描累计次数');
+    ylabel('|R - R_{final}| / R_{final}');
+    title('压阻系数相对最终值的误差');
+    grid on;
+    hold off;
+
+    sgtitle('压阻系数 R_{flow} 收敛轨迹');
+end
+
 %% 4. 收敛历史
 % 修剪未使用的预分配
 residual_history(i1+1:end) = [];
