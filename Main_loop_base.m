@@ -129,7 +129,7 @@ if has_loops
 
         % Phase1 步出判据：前后两次流量相对变化 < 1e-3
         delta_mdot = max(abs(mdot_R - mdot_R_prev) ./ mdot_R);
-        if i1 > 1 && delta_mdot < 1e-3
+        if i1 > 1 && delta_mdot < 1e-2
             fprintf('Phase1 流量稳定 (delta_mdot=%.2e)，进入 Phase2\n', delta_mdot);
             break
         end
@@ -649,8 +649,8 @@ for i2 = 1:nTubes
         if i3 < CV_num
             h_R_in_tube(i3 + 1) = xout(1);
             p_R_in_tube(i3 + 1) = p_R_out_tube(i3);
-            cache_R_in = cache_R_out;
-            cache_MA_in = cache_MA_out;
+            cache_R_in = cache_R_out;  % 工质沿管流动，出口→下游入口
+            % 空气横掠管束，同管所有 CV 入口相同，不转发 cache_MA
         end
     end
 
