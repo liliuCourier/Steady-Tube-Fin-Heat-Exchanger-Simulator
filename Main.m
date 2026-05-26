@@ -19,13 +19,13 @@ if ~exist('BDCondition','var')
     error('BDCondition 未找到，请先运行 PreProcessing');
 end
 
-options = optimoptions('fsolve','Display','none',...
-    'Algorithm','levenberg-marquardt',...
-    'FunctionTolerance',1e-12,...
-    'MaxFunctionEvaluations',5e4,...
-    'StepTolerance',1e-8,...
-    'UseParallel',false,...
-    'ScaleProblem','jacobian');
+% options = optimoptions('fsolve','Display','none',...
+%     'Algorithm','levenberg-marquardt',...
+%     'FunctionTolerance',1e-12,...
+%     'MaxFunctionEvaluations',5e4,...
+%     'StepTolerance',1e-8,...
+%     'UseParallel',false,...
+%     'ScaleProblem','jacobian');
 
 %% 初始化求解
 
@@ -239,18 +239,18 @@ dp_loop_max = dp_loop_history(i1);
 fprintf('求解完成，耗时 %.2f s，正在运行后处理...\n', time);
 % 
 % % 自动运行后处理
-% try
-%     PostProcessing;
-% catch ME
-%     fprintf('后处理运行出错: %s\n', ME.message);
-% end
+try
+    PostProcessing;
+catch ME
+    fprintf('后处理运行出错: %s\n', ME.message);
+end
 
 %%
-function F = uF(u,R_flow,N,mdot0,R_coef)
-dp_tube = (R_flow).*(mdot0 + N*u).^R_coef;
-dp_loop = (dp_tube')*N;
-F = dp_loop;
-end
+% function F = uF(u,R_flow,N,mdot0,R_coef)
+% dp_tube = (R_flow).*(mdot0 + N*u).^R_coef;
+% dp_loop = (dp_tube')*N;
+% F = dp_loop;
+% end
 
 function  F = alg(x0,BD,InletBD,GeoCondition,CV,N,solver_flag,Prop_handle)
 % 迭代上限

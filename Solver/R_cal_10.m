@@ -90,8 +90,42 @@ f_CV =      (-1.8*log10(6.9./Re_1P+(r/3.7)^1.11)).^(-2);
 
 % 计算单相压降
 % 使用单相流量，但是单相物性
-% Re_go = abs(mdot)*vsatvap_CV*D_inner./(S*Nusatvap_CV*1e-6);
-% Re_lo = abs(mdot)*vsatliq_CV*D_inner./(S*Nusatliq_CV*1e-6);
+Re_go = abs(mdot)*D_inner./(S*Nusatvap_CV*1e-6);
+Re_lo = abs(mdot)*D_inner./(S*Nusatliq_CV*1e-6);
+
+Re_lam = 2000;  Re_tur = 3000;
+% 全气相 Fanning 摩擦因子
+if Re_go <= Re_lam
+    f_go = 16 / Re_go;
+elseif Re_go < Re_tur
+    f_go_lam = 16 / Re_lam;
+    f_go_tur = 0.079 / Re_tur^0.25;
+    w_go = (Re_go - Re_lam) / (Re_tur - Re_lam);
+    f_go = f_go_lam*(1-w_go) + f_go_tur*w_go;
+elseif Re_go < 1e5
+    f_go = 0.079 / Re_go^0.25;
+else
+    f_go = 0.25 / (4 * (log10(150.39/Re_go^0.98865 - 152.66/Re_go))^2);
+end
+% 全液相 Fanning 摩擦因子
+if Re_lo <= Re_lam
+    f_lo = 16 / Re_lo;
+elseif Re_lo < Re_tur
+    f_lo_lam = 16 / Re_lam;
+    f_lo_tur = 0.079 / Re_tur^0.25;
+    w_lo = (Re_lo - Re_lam) / (Re_tur - Re_lam);
+    f_lo = f_lo_lam*(1-w_lo) + f_lo_tur*w_lo;
+elseif Re_lo < 1e5
+    f_lo = 0.079 / Re_lo^0.25;
+else
+    f_lo = 0.25 / (4 * (log10(150.39/Re_lo^0.98865 - 152.66/Re_lo))^2);
+end
+
+dpdL_lo = 2*f_lo*(abs(mdot)/S)^2/(D_inner/vsatliq_CV);
+dpdL_go = 2*f_go*(abs(mdot)/S)^2/(D_inner/vsatvap_CV);
+G = dpdL_lo + 2*(dpdL_go - dpdL_lo)*x_CV;
+%dp = L*(G*(1-x_CV)^(1/3)+ b*x_CV^3);
+
 %
 % if Re_go > 3000
 %     f_go = (-1.8*log10(6.9./Re_go+(r/3.7)^1.11)).^(-2);%0.25*(log(150.39/Re_go^0.98865 - 152.66/Re_go))^(-2);
@@ -119,7 +153,8 @@ f_CV =      (-1.8*log10(6.9./Re_1P+(r/3.7)^1.11)).^(-2);
 % dp_f_CV = Th*dpdL_lo*L/CV_num;
 
 L = L + 30*D_inner;
-dp_f_CV =   (f_CV*L/CV_num).*(mdot.^2)./(2*D_CV*D_inner*S^2);    % Pa  摩擦压损
+%dp_f_CV =   (f_CV*L/CV_num).*(mdot.^2)./(2*D_CV*D_inner*S^2);    % Pa  摩擦压损
+dp_f_CV = L*(G*(1-x_CV)^(1/3)+ dpdL_go*x_CV^3);  % Müller-Steinhagen and Heck (1986) 公式
 dp_v_CV =   16*mdot.^2/(pi^2*D_inner^4).*(1./Dout_CV - 1./Din_CV);   % Pa  速度压损
 dp =    (dp_f_CV + dp_v_CV);
 

@@ -15,7 +15,6 @@ hmax     = Prop_handle.hmax;
 % k_vap    = Prop_handle.k_vap;
 % k_liq    = Prop_handle.k_liq;
 
-% 做成单输出模式，先检查相态
 
 % 饱和参数计算（优先使用缓存，避免 11 次 griddedInterpolant 插值）
 if nargin >= 4 && ~isempty(sat_props)

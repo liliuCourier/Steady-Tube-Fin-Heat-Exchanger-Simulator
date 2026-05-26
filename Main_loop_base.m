@@ -284,11 +284,11 @@ fprintf('求解完成，耗时 %.2f s，正在运行后处理...\n', time);
 % end
 
 %%
-function F = uF(u,R_flow,N,mdot0,R_coef)
- dp_tube = (R_flow).*(mdot0 + N*u).^R_coef;
- dp_loop = (dp_tube')*N;
- F = dp_loop;
-end
+% function F = uF(u,R_flow,N,mdot0,R_coef)
+%  dp_tube = (R_flow).*(mdot0 + N*u).^R_coef;
+%  dp_loop = (dp_tube')*N;
+%  F = dp_loop;
+% end
 
 
 
