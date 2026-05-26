@@ -111,7 +111,7 @@ function [heatPaths, pdropPaths,predecessors_in,predecessors_out] = buildPaths(A
             road_1 = [];
             for j = 1:size(r1,2)
                 tube1 = r1(j);
-                if ~any(ismember(predecessors_in{j},r1))
+                if ~any(ismember(predecessors_in{tube1},r1))
                     break
                 end
             end
@@ -130,7 +130,7 @@ function [heatPaths, pdropPaths,predecessors_in,predecessors_out] = buildPaths(A
             road_2 = [];
             for j = 1:size(r2,2)
                 tube2 = r2(j);
-                if ~any(ismember(predecessors_in{j},r2))
+                if ~any(ismember(predecessors_in{tube2},r2))
                     road_2(1,end+1) = tube2;
                     break
                 end

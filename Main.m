@@ -237,13 +237,13 @@ dp_loop_max = dp_loop_history(i1);
 % 每根管的最终合理的压阻系数：
 % log(dp_tube*1e6./R_flow)./log(mdot_R)
 fprintf('求解完成，耗时 %.2f s，正在运行后处理...\n', time);
-
-% 自动运行后处理
-try
-    PostProcessing;
-catch ME
-    fprintf('后处理运行出错: %s\n', ME.message);
-end
+% 
+% % 自动运行后处理
+% try
+%     PostProcessing;
+% catch ME
+%     fprintf('后处理运行出错: %s\n', ME.message);
+% end
 
 %%
 function F = uF(u,R_flow,N,mdot0,R_coef)
@@ -318,8 +318,8 @@ if solver_flag == 1
 
     %     % inlet property cache: inlet p/h unchanged during fixed-point iteration
     % 进口物性缓存：饱和物性提前从 Prop_handle 计算，同时用于入口
-    % Prop1（跳过 9 次插值）和出口 sat_cache（p_in≈p_out, dp~Pa）
-    sat_in = cell(1,9);
+    % Prop1（跳过 11 次插值）和出口 sat_cache（p_in≈p_out, dp~Pa）
+    sat_in = cell(1,11);
     sat_in{1} = Prop_handle.v_liq(0, p_R_inlet);    % vsatliq
     sat_in{2} = Prop_handle.v_vap(1, p_R_inlet);    % vsatvap
     sat_in{3} = Prop_handle.Pr_liq(0, p_R_inlet);   % Prsatliq
@@ -329,6 +329,8 @@ if solver_flag == 1
     sat_in{7} = Prop_handle.k_liq(0, p_R_inlet);    % ksatliq
     sat_in{8} = Prop_handle.k_vap(1, p_R_inlet);    % ksatvap
     sat_in{9} = Prop_handle.T_liq(0, p_R_inlet);    % Tsatliq
+    sat_in{10} = Prop_handle.h_sat_liq(p_R_inlet);  % hsatliq
+    sat_in{11} = Prop_handle.h_sat_vap(p_R_inlet);  % hsatvap
 
     inlet_props = cell(1,14);
     [inlet_props{:}] = Prop1(p_R_inlet, h_R_inlet, Prop_handle, sat_in);
@@ -342,12 +344,14 @@ if solver_flag == 1
     inlet_air_props{6} = Ra * T_MA_inlet / (p_MA_inlet * 1e6);
 
     % 出口饱和缓存：复用 sat_in，仅 Tsatliq 重取 p_out
-    sat_cache = cell(1,9);
+    sat_cache = cell(1,11);
     sat_cache{1} = sat_in{1}; sat_cache{2} = sat_in{2};
     sat_cache{3} = sat_in{3}; sat_cache{4} = sat_in{4};
     sat_cache{5} = sat_in{5}; sat_cache{6} = sat_in{6};
     sat_cache{7} = sat_in{7}; sat_cache{8} = sat_in{8};
     sat_cache{9} = Prop_handle.T_liq(0, BD(1));  % Tsatliq at p_out
+    sat_cache{10} = sat_in{10};  % hsatliq: p_in≈p_out
+    sat_cache{11} = sat_in{11};  % hsatvap: p_in≈p_out
 
     for i = 1:loopmax
         out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props,sat_cache);

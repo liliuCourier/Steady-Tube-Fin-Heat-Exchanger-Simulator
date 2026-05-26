@@ -126,15 +126,16 @@ n_fin = tanh(mH)./mH;
 
 %% 残差构造
 
-dEF_air = mdot.*(h_in - h_out)  ; 
+dEF_air = mdot.*(h_in - h_out)  ;
 
+out = cell(7);
 
-        out{1} = dEF_air;
-        out{2} = n_fin;
-        out{3} = h;
-        out{4} = cp_CV;
-        out{5} = dp;
-        out{6} = F_dp;
-        out{7} = {h_air_out, Pr_air_out, vis_air_out, k_air_out, cp_air_out, vout};
+out{1} = dEF_air;
+out{2} = n_fin;
+out{3} = h;
+out{4} = cp_CV;
+out{5} = dp;
+out{6} = F_dp;
+out{7} = {h_air_out, Pr_air_out, vis_air_out, k_air_out, cp_air_out, vout};
 
 end

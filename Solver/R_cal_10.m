@@ -157,6 +157,7 @@ dEF = mdot.*(hin - hout);
 % end
 
 %%
+out = cell(7);
 out{1} = Tin_CV;
 out{2} = Tout_CV;
 out{3} = h_R;

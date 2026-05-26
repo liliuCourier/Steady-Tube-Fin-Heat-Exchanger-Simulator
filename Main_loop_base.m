@@ -13,13 +13,13 @@ if ~exist('TCinf','var'),       error('TCinf 未找到，请先运行 PreProcess
 if ~exist('GeoCondition','var'), error('GeoCondition 未找到，请先运行 PreProcessing'); end
 if ~exist('BDCondition','var'),  error('BDCondition 未找到，请先运行 PreProcessing'); end
 
-options = optimoptions('fsolve','Display','none',...
-    'Algorithm','levenberg-marquardt',...
-    'FunctionTolerance',1e-12,...
-    'MaxFunctionEvaluations',5e4,...
-    'StepTolerance',1e-8,...
-    'UseParallel',false,...
-    'ScaleProblem','jacobian');
+% options = optimoptions('fsolve','Display','none',...
+%     'Algorithm','levenberg-marquardt',...
+%     'FunctionTolerance',1e-12,...
+%     'MaxFunctionEvaluations',5e4,...
+%     'StepTolerance',1e-8,...
+%     'UseParallel',false,...
+%     'ScaleProblem','jacobian');
 
 %% 初始化
 [N,u0,mdot0,mdot_R_init,exitflag] = mdot_Initial(BDCondition,GeoCondition,TCinf);
@@ -78,13 +78,14 @@ u0_history{1} = u0;
 has_loops = ~isempty(N) && size(N,2) > 0;
 
 %% Phase 1: 仅热力扫描 + 提取压阻，迭代至流量稳定
-% 压力场全程不变（p_R_inlet），9 项饱和物性所有 CV/迭代共用
-sat_global = cell(1,9);
+% 压力场全程不变（p_R_inlet），11 项饱和物性所有 CV/迭代共用
+sat_global = cell(1,11);
 sat_global{1} = Prop_handle.v_liq(0, p_R_inlet);   sat_global{2} = Prop_handle.v_vap(1, p_R_inlet);
 sat_global{3} = Prop_handle.Pr_liq(0, p_R_inlet);  sat_global{4} = Prop_handle.Pr_vap(1, p_R_inlet);
 sat_global{5} = Prop_handle.Nu_liq(0, p_R_inlet);  sat_global{6} = Prop_handle.Nu_vap(1, p_R_inlet);
 sat_global{7} = Prop_handle.k_liq(0, p_R_inlet);   sat_global{8} = Prop_handle.k_vap(1, p_R_inlet);
 sat_global{9} = Prop_handle.T_liq(0, p_R_inlet);
+sat_global{10} = Prop_handle.h_sat_liq(p_R_inlet); sat_global{11} = Prop_handle.h_sat_vap(p_R_inlet);
 tic
 if has_loops
     for i1 = 1:loopmax
@@ -136,7 +137,7 @@ if has_loops
 
         % Phase1 步出判据：前后两次流量相对变化 < 1e-3
         delta_mdot = max(abs(mdot_R - mdot_R_prev) ./ mdot_R);
-        if i1 > 1 && delta_mdot < 1e-1
+        if i1 > 1 && delta_mdot < 1e-2
             fprintf('Phase1 流量稳定 (delta_mdot=%.2e)，进入 Phase2\n', delta_mdot);
             break
         end
@@ -275,12 +276,12 @@ time = toc;
 
 dp_loop_max = dp_loop_history(i1);
 fprintf('求解完成，耗时 %.2f s，正在运行后处理...\n', time);
-
-try
-    PostProcessing;
-catch ME
-    fprintf('后处理运行出错: %s\n', ME.message);
-end
+% 
+% try
+%     PostProcessing;
+% catch ME
+%     fprintf('后处理运行出错: %s\n', ME.message);
+% end
 
 %%
 function F = uF(u,R_flow,N,mdot0,R_coef)
@@ -347,12 +348,13 @@ if solver_flag == 1
     x0_MA = [x0(2);BD(2)];
 
     % 热力扫描中压力不变，饱和物性仅取决于 p，提前计算一并用于入口 Prop1 和出口 sat_cache
-    sat_in = cell(1,9);
+    sat_in = cell(1,11);
     sat_in{1} = Prop_handle.v_liq(0, p_R_inlet); sat_in{2} = Prop_handle.v_vap(1, p_R_inlet);
     sat_in{3} = Prop_handle.Pr_liq(0, p_R_inlet); sat_in{4} = Prop_handle.Pr_vap(1, p_R_inlet);
     sat_in{5} = Prop_handle.Nu_liq(0, p_R_inlet); sat_in{6} = Prop_handle.Nu_vap(1, p_R_inlet);
     sat_in{7} = Prop_handle.k_liq(0, p_R_inlet); sat_in{8} = Prop_handle.k_vap(1, p_R_inlet);
     sat_in{9} = Prop_handle.T_liq(0, p_R_inlet);
+    sat_in{10} = Prop_handle.h_sat_liq(p_R_inlet); sat_in{11} = Prop_handle.h_sat_vap(p_R_inlet);
 
     % 入口缓存：传入 sat_in 避免 Prop1 内重复计算饱和值
     if nargin >= 9 && ~isempty(cache_R_in)
@@ -375,12 +377,13 @@ if solver_flag == 1
     end
 
     % 出口饱和缓存：复用 sat_in，仅 Tsatliq 重取 p_out
-    sat_cache = cell(1,9);
+    sat_cache = cell(1,11);
     sat_cache{1} = sat_in{1}; sat_cache{2} = sat_in{2};
     sat_cache{3} = sat_in{3}; sat_cache{4} = sat_in{4};
     sat_cache{5} = sat_in{5}; sat_cache{6} = sat_in{6};
     sat_cache{7} = sat_in{7}; sat_cache{8} = sat_in{8};
     sat_cache{9} = Prop_handle.T_liq(0, BD(1));
+    sat_cache{10} = sat_in{10}; sat_cache{11} = sat_in{11};
 
     for i = 1:loopmax
         out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props,sat_cache);
@@ -421,12 +424,13 @@ elseif solver_flag == 2
     x0_R  = [BD(1);x0(1)];
     x0_MA = [BD(2);x0(2)];
 
-    sat_in = cell(1,9);
+    sat_in = cell(1,11);
     sat_in{1} = Prop_handle.v_liq(0, p_R_inlet); sat_in{2} = Prop_handle.v_vap(1, p_R_inlet);
     sat_in{3} = Prop_handle.Pr_liq(0, p_R_inlet); sat_in{4} = Prop_handle.Pr_vap(1, p_R_inlet);
     sat_in{5} = Prop_handle.Nu_liq(0, p_R_inlet); sat_in{6} = Prop_handle.Nu_vap(1, p_R_inlet);
     sat_in{7} = Prop_handle.k_liq(0, p_R_inlet); sat_in{8} = Prop_handle.k_vap(1, p_R_inlet);
     sat_in{9} = Prop_handle.T_liq(0, p_R_inlet);
+    sat_in{10} = Prop_handle.h_sat_liq(p_R_inlet); sat_in{11} = Prop_handle.h_sat_vap(p_R_inlet);
 
     if nargin >= 9 && ~isempty(cache_R_in)
         inlet_props = cache_R_in;
