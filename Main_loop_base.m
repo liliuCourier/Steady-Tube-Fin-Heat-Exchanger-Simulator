@@ -648,8 +648,9 @@ for i2 = 1:nTubes
     is_bi = ~isempty(predecessors_in{tube}) && ...
             length(predecessors_out{predecessors_in{tube}(1)}) > 1;
     if is_bi
+        Lb = bend_len(tube, predecessors_in{tube}(1), GeoCondition);
         dp_bend_pa = bend_cal_phase1(h_R_in_tube(1), p_R_in_tube(1), ...
-            mdot_R_tube, GeoCondition, Prop_handle, sat_global);
+            mdot_R_tube, Lb, GeoCondition, Prop_handle, sat_global);
         p_R_in_tube(1) = p_R_in_tube(1) - dp_bend_pa/1e6;   % Pa→MPa
         dp_acc = dp_acc + dp_bend_pa;
     end
@@ -697,8 +698,9 @@ for i2 = 1:nTubes
     % === bend_out: 单一下游 → 管出口含弯管压降 ===
     is_bo = (length(predecessors_out{tube}) == 1);
     if is_bo
+        Lb = bend_len(tube, predecessors_out{tube}(1), GeoCondition);
         dp_bend_pa = bend_cal_phase1(h_R_tube_outlet(tube), ...
-            p_R_tube_outlet(tube), mdot_R_tube, GeoCondition, ...
+            p_R_tube_outlet(tube), mdot_R_tube, Lb, GeoCondition, ...
             Prop_handle, sat_global);
         p_R_tube_outlet(tube) = p_R_tube_outlet(tube) - dp_bend_pa/1e6;
         dp_acc = dp_acc + dp_bend_pa;
@@ -768,8 +770,9 @@ for i2 = 1:nTubes
     is_bi = ~isempty(predecessors_in{tube}) && ...
             length(predecessors_out{predecessors_in{tube}(1)}) > 1;
     if is_bi
+        Lb = bend_len(tube, predecessors_in{tube}(1), GeoCondition);
         dp_u = bend_cal(h_R_in_tube(1), p_R_in_tube(1), ...
-            mdot_R_tube, GeoCondition, Prop_handle);
+            mdot_R_tube, Lb, GeoCondition, Prop_handle);
         p_R_in_tube(1) = p_R_in_tube(1) - dp_u;
     end
 
@@ -836,8 +839,9 @@ for i2 = 1:nTubes
     % === bend_out: 单一下游 → 管出口含弯管压降 ===
     is_bo = (length(predecessors_out{tube}) == 1);
     if is_bo
+        Lb = bend_len(tube, predecessors_out{tube}(1), GeoCondition);
         dp_u = bend_cal(h_R_tube_outlet(tube), ...
-            p_R_tube_outlet(tube), mdot_R_tube, GeoCondition, Prop_handle);
+            p_R_tube_outlet(tube), mdot_R_tube, Lb, GeoCondition, Prop_handle);
         p_R_tube_outlet(tube) = p_R_tube_outlet(tube) - dp_u;
     end
 
@@ -853,42 +857,64 @@ for i2 = 1:nTubes
 end
 end
 
-function dp_out = bend_cal_phase1(h_in, p_in, mdot, Geo, Ph, sat_glb)
-% 弯管压降 (Phase1, K=1.5 + Paliwoda两相修正), 返回 Pa
+function dp_out = bend_cal_phase1(h_in, p_in, mdot, L_geom, Geo, Ph, sat_glb)
+% 弯管压降 (Phase1): L_total=几何长+当量长, MSH沿程 + Paliwoda两相, 返回 Pa
     D = Geo.D_inner;  S = pi*D^2/4;  G = abs(mdot)/S;
     p_out = p_in * 0.98;
     for i = 1:15
         p_avg = (p_in + p_out)/2;
         [~,~,~,~,x_b,~,v_L,v_V,~,~,~,~,~,~] = Prop1(real(p_avg), h_in, Ph, sat_glb);
-        rho_L = 1/v_L;  Kb = 1.5;
-        dp_b = Kb * G^2 / (2*rho_L);
+        rho_L = 1/v_L;
+        Re = G*D/(Ph.Nu_liq(0,real(p_avg))*1e-6);
+        if Re<=2000, f=16/Re; elseif Re<1e5, f=0.079/Re^0.25;
+        else, f_D=0.25/(log10(150.39/Re^0.98865-152.66/Re))^2; f=f_D/4; end
+        L_eq = 1.5 * D / (2*f);   % K=1.5 → 当量长度
+        L_tot = L_geom + L_eq;
+        dp_b = 2 * f * G^2 * L_tot / (rho_L * D);
         if x_b > 0.05 && x_b < 0.95
             rho_G = 1/v_V;
             dp_b = (1 + x_b*(rho_L-rho_G)/rho_G) * dp_b;
         end
         p_new = p_in - dp_b/1e6;
-        if abs(p_new-p_out) < 1e-8, p_out = p_new; break; end
+        if abs(p_new-p_out) < 1e-6, p_out = p_new; break; end
         p_out = p_new;
     end
     dp_out = (p_in - p_out) * 1e6;
 end
 
-function dp_out = bend_cal(h_in, p_in, mdot, Geo, Ph)
-% 弯管压降 (Phase2, K=1.5, 等焓不动点), 返回 MPa
+function dp_out = bend_cal(h_in, p_in, mdot, L_geom, Geo, Ph)
+% 弯管压降 (Phase2): L_total=几何长+当量长, MSH沿程, 返回 MPa
     D = Geo.D_inner;  S = pi*D^2/4;  G = abs(mdot)/S;
     p_out = p_in * 0.98;
     for i = 1:15
         p_avg = (p_in + p_out)/2;
         [~,~,~,~,x_b,~,v_L,v_V,~,~,~,~,~,~] = Prop1(real(p_avg), h_in, Ph);
-        rho_L = 1/v_L;  Kb = 1.5;
-        dp_b = Kb * G^2 / (2*rho_L);
+        rho_L = 1/v_L;
+        Re = G*D/(Ph.Nu_liq(0,real(p_avg))*1e-6);
+        if Re<=2000, f=16/Re; elseif Re<1e5, f=0.079/Re^0.25;
+        else, f_D=0.25/(log10(150.39/Re^0.98865-152.66/Re))^2; f=f_D/4; end
+        L_eq = 1.5 * D / (2*f);
+        L_tot = L_geom + L_eq;
+        dp_b = 2 * f * G^2 * L_tot / (rho_L * D);
         if x_b > 0.05 && x_b < 0.95
             rho_G = 1/v_V;
             dp_b = (1 + x_b*(rho_L-rho_G)/rho_G) * dp_b;
         end
         p_new = p_in - dp_b/1e6;
-        if abs(p_new-p_out) < 1e-8, p_out = p_new; break; end
+        if abs(p_new-p_out) < 1e-6, p_out = p_new; break; end
         p_out = p_new;
     end
     dp_out = (p_in - p_out);
+end
+
+function Lb = bend_len(k1, k2, Gc)
+% 管间U型弯几何长度: 弧长 + 直线段
+    col = Gc.col;  P_row = Gc.P_row;  P_col = Gc.P_col;
+    r1 = floor((k1-1)/col)+1;  c1 = mod(k1-1, col)+1;
+    r2 = floor((k2-1)/col)+1;  c2 = mod(k2-1, col)+1;
+    dist = sqrt(((r2-r1)*P_row)^2 + ((c2-c1)*P_col)^2);
+    Rb = 1.5 * Gc.D_inner;
+    straight = max(0, dist - 2*Rb);
+    arc = pi * Rb;
+    Lb = straight + arc;
 end
