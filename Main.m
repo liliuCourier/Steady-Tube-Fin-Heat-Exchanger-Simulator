@@ -70,6 +70,7 @@ mdot_MA     = mdot_MA_inlet/row/CV_num*ones(CV_num,Tube_num);
 
 dp_tube = zeros(Tube_num,1);
 R_flow = [];  % 初始化（无环路时保持为空）
+K_bend  = 1.5;          % U型弯单相阻力系数 (180°回弯, R/D≈1.5)
 %dp_Uband = zeros(Tube_num,1);
 
 % 求解
@@ -121,7 +122,7 @@ for i1 = 1:loopmax
         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
         dp_tube, residual_max, ...
          h_R_tube_outlet, p_R_tube_outlet] = scanTubes(...
-        heatPaths, predecessors_in, ...
+        heatPaths, predecessors_in, predecessors_out, ...
         h_R_in, h_R_out, T_MA_in, T_MA_out, ...
         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
         mdot_R, mdot_MA, TCinf, GeoCondition, ...
@@ -144,8 +145,9 @@ for i1 = 1:loopmax
         % 无环路：直接过渡到第二次广度优先压力场更新
         [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-            dp_tube, residual_max] = scanTubes(...
-            heatPaths, predecessors_in, ...
+            dp_tube, residual_max, ...
+         h_R_tube_outlet, p_R_tube_outlet] = scanTubes(...
+            heatPaths, predecessors_in, predecessors_out, ...
             h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
             mdot_R, mdot_MA, TCinf, GeoCondition, ...
@@ -175,8 +177,9 @@ for i1 = 1:loopmax
         %for i2 = 1:loopmax
         [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-            dp_tube, residual_max] = scanTubes(...
-            heatPaths, predecessors_in, ...
+            dp_tube, residual_max, ...
+         h_R_tube_outlet, p_R_tube_outlet] = scanTubes(...
+            heatPaths, predecessors_in, predecessors_out, ...
             h_R_in, h_R_out, T_MA_in, T_MA_out, ...
             p_R_in, p_R_out, p_MA_in, p_MA_out, ...
             mdot_R, mdot_MA, TCinf, GeoCondition, ...
@@ -265,31 +268,24 @@ loopmax = 100;
 residual_Energy = 1e-3;
 residual_dp = 1e-3;
 
-% if solver_flag == 3
-% 
-%     for i = 1:loopmax
-%         x0_R  = [BD(1);x0(1)];
-%         BD_R.h_R_inlet      = BD(2);
-%         BD_R.mdot_R_inlet   = InletBD(1);
-%         BD_R.p_R_inlet      = x0(2);
-%         BD_R.Uband_L =      InletBD(2);
-% 
-%         flag = 2;
-%         out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,flag);
-%         dp_R        = out;
-%         if max(abs((dp_R - (x0(2) - x0(1))*1e6)/dp_R))<residual_dp && i<loopmax
-%             x0(1) = x0(2) - dp_R/1e6;
-%             break
-%         elseif i==loopmax
-%             disp("Uband压降不动点迭代失败")
-%         else
-%             x0(1) = x0(2) - dp_R/1e6;
-%         end
-%     end
-% 
-%     F = [dp_R,x0(1)];
-%     return
-% end
+if solver_flag == 3
+    h_u = InletBD(1);  p_in_u = InletBD(2);  mdot_u = InletBD(3);
+    D = GeoCondition.D_inner;  S = pi*D^2/4;  G = abs(mdot_u)/S;
+    p_out_u = x0(1);
+    for i = 1:15
+        p_avg = (p_in_u + p_out_u)/2;
+        [~,~,~,~,x_u,~,v_L,v_V,~,~,~,~,~,~] = Prop1(real(p_avg), h_u, Prop_handle);
+        rho_L = 1/v_L;  dp_u = K_bend * G^2 / (2*rho_L);
+        if x_u > 0.05 && x_u < 0.95
+            rho_G = 1/v_V;
+            dp_u = (1 + x_u*(rho_L-rho_G)/rho_G) * dp_u;
+        end
+        p_new = p_in_u - dp_u/1e6;
+        if abs(p_new-p_out_u) < 1e-8, p_out_u = p_new; break; end
+        p_out_u = p_new;
+    end
+    F = [0; p_out_u];  return
+end
 
 h_R_inlet = InletBD(1);
 p_R_inlet = InletBD(2);
@@ -444,7 +440,7 @@ function [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
           p_R_in, p_R_out, p_MA_in, p_MA_out, ...
           dp_tube, residual_max, ...
           h_R_tube_outlet, p_R_tube_outlet] = scanTubes(...
-    tubePaths, predecessors_in, ...
+    tubePaths, predecessors_in, predecessors_out, ...
     h_R_in, h_R_out, T_MA_in, T_MA_out, ...
     p_R_in, p_R_out, p_MA_in, p_MA_out, ...
     mdot_R, mdot_MA, TCinf, GeoCondition, ...
@@ -487,6 +483,15 @@ for i2 = 1:nTubes
     p_MA_out_tube = p_MA_out(:, tube);
 
     flowDirection = TCinf.FlowDirection(tube);
+
+    % === bend_in: 上游分流 → CV1入口含弯管压降 ===
+    is_bi = ~isempty(predecessors_in{tube}) && ...
+            length(predecessors_out{predecessors_in{tube}(1)}) > 1;
+    if is_bi
+        dp_u = bend_cal(h_R_in_tube(1), p_R_in_tube(1), ...
+            mdot_R_tube, GeoCondition, Prop_handle);
+        p_R_in_tube(1) = p_R_in_tube(1) - dp_u;
+    end
 
     for i3 = 1:CV_num
         rev = CV_num + 1 - i3;
@@ -548,6 +553,14 @@ for i2 = 1:nTubes
     h_R_tube_outlet(tube) = h_R_out_tube(end);
     p_R_tube_outlet(tube) = p_R_out_tube(end);
 
+    % === bend_out: 单一下游 → 管出口含弯管压降 ===
+    is_bo = (length(predecessors_out{tube}) == 1);
+    if is_bo
+        dp_u = bend_cal(h_R_tube_outlet(tube), ...
+            p_R_tube_outlet(tube), mdot_R_tube, GeoCondition, Prop_handle);
+        p_R_tube_outlet(tube) = p_R_tube_outlet(tube) - dp_u;
+    end
+
     if solver_flag == 1
         h_R_out(:, tube) = h_R_out_tube;
         h_R_in(:, tube) = h_R_in_tube;
@@ -558,4 +571,23 @@ for i2 = 1:nTubes
         p_MA_in = [p_MA_inlet * ones(CV_num, row), p_MA_out(:, 1:end-row)];
     end
 end
+end
+
+function dp_out = bend_cal(h_in, p_in, mdot, Geo, Ph)
+% 弯管压降 (K=1.5, 等焓不动点), 返回 MPa
+    D = Geo.D_inner;  S = pi*D^2/4;  G = abs(mdot)/S;
+    p_out = p_in * 0.98;
+    for i = 1:15
+        p_avg = (p_in + p_out)/2;
+        [~,~,~,~,x_b,~,v_L,v_V,~,~,~,~,~,~] = Prop1(real(p_avg), h_in, Ph);
+        rho_L = 1/v_L;  Kb = 1.5;  dp_b = Kb * G^2 / (2*rho_L);
+        if x_b > 0.05 && x_b < 0.95
+            rho_G = 1/v_V;
+            dp_b = (1 + x_b*(rho_L-rho_G)/rho_G) * dp_b;
+        end
+        p_new = p_in - dp_b/1e6;
+        if abs(p_new-p_out) < 1e-8, p_out = p_new; break; end
+        p_out = p_new;
+    end
+    dp_out = (p_in - p_out);  % MPa
 end
