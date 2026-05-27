@@ -1,4 +1,70 @@
-# Code Logic — Steady Tube-Fin Heat Exchanger Simulator (Demo1.02)
+# Code Logic — Steady Tube-Fin Heat Exchanger Simulator (Demo1.14)
+
+## 零、稳态换热器求解策略
+
+### 问题定义
+
+给定管翅式换热器的流路拓扑、几何尺寸、工质和空气的入口边界条件（$T_{in}$, $p_{in}$, $\dot{m}$），求解稳态下：
+- 每根管、每个控制容积的温度场、压力场、干度场
+- 总换热量、总压降
+
+### 为什么不能直接联立求解？
+
+换热和压降是**双向耦合**的：换热量影响焓变→焓变影响干度→干度影响物性和压降→压降影响压力→压力影响饱和温度→影响换热温差。全联立（Jiang 2003 的非线性 NR+FDM）导致雅可比矩阵过大且需要有限差分。
+
+### 本程序的求解策略：解耦 + 分步迭代
+
+**核心思想**（沿袭 Ding/Liu 2004，本文改进）：把控制方程组拆成两个子问题交替求解。
+
+### 外层迭代（Main.m 主循环）
+
+```
+1. 换热扫描（固定压力场，只算换热）
+   沿 Kahn 拓扑排序遍历每根管、每段控制容积：
+   ├─ 输入: 入口 h, p, mdot
+   ├─ 调用 R_cal_10: 不动点迭代解 CV 出口状态
+   │   └─ 单相: Gnielinski HTC → 能量平衡收敛
+   │   └─ 两相: Cavallini-Zecchin HTC → 能量平衡收敛
+   └─ 调用 DryA_cal_10: 空气侧 j/f 因子 → 换热量验证
+
+2. 压力扫描（固定焓场，只算压降）
+   同上遍历：
+   ├─ 调用 R_cal_10: MSH 两相压降 / Haaland 单相
+   ├─ 速度头压降 = ρv² 改变项
+   └─ 输出 dp_CV
+
+3. 流量重分配（仅当有环路时）
+   环路压降不平衡 → Newton 迭代求解 N'·(R·m^e)=0
+   前: mdot → 计算每管 dp → 环路残差 → 修正 mdot
+
+4. 收敛检查
+   环路 dp 不平衡 < 1e-6 Pa && 能量残差 < 1e-3 → 退出
+```
+
+### 为什么这个策略有效？
+
+关键在于 $\Delta p / P \approx 10^{-3}$ 的量级关系——压力场对换热的影响（③ P→T_sat→ΔT）远弱于换热对压降的影响（② x→ρ,μ→摩擦）。
+
+因此固定压力场算换热带来的误差量级约为 $O(\Delta p/P)$ 而非 $O(1)$，迭代 3-5 轮即可收敛。
+
+### 两层嵌套
+
+| 层 | 做什么 | 迭代变量 | 收敛判据 |
+|---|---|---|---|
+| **外层** (Main) | 换热+压力→流量重分配 | $mdot_{1..N}$ | 环路残差 < 1e-6 |
+| **内层** (R_cal_10) | 单个 CV 的出口状态 | $h_{out}, p_{out}$ | 能量守恒 < 1e-3 |
+
+### 数据结构层次
+
+```
+管进口状态 ──→ CV1入口 ──→ CV1出口 ──→ ... ──→ CVn出口 ──→ 管出口状态
+  (tube_inlet)  (h_in,p_in)  (h_out,p_out)       (h_out,p_out)  (tube_outlet)
+      └──── 入口弯管 ───────────────────────── 出口弯管 ────┘
+```
+
+管间传递通过 `tube_inlet(tube) = tube_outlet(upstream)` 实现（串联等焓等压，汇流焓加权平均）。
+
+---
 
 ## 目录结构
 
@@ -8,11 +74,14 @@ Program_1_AI/
 ├── Main.m                       ← 入口2: 稳态求解
 ├── Main_loop_base.m              ← 入口2b: 两阶段环路优先求解器
 ├── PostProcessing.m             ← 入口3: 后处理（自动触发）
-├── readme.md
+├── readme.md                    ← 版本记录
+├── Codelogic.md                 ← 本文档
+├── single_phase_pressure_drop_summary.md   ← 单相压降公式总结
+├── two_phase_pressure_drop_summary.md      ← 两相压降公式总结
 ├── .gitignore
 ├── PreProc/                     ← 预处理模块
 │   ├── HX_Path_Planner1.m       GUI 流路设计器
-│   ├── GenerateGeo.m            几何参数设置
+│   ├── GenerateGeo.m            几何参数设置（含 bend_K 常量 1.5）
 │   └── GenerateBD.m             边界条件与求解设置
 ├── Solver/                      ← 求解器核心
 │   ├── mdot_Initial.m           流量初始化（线性规划 + 零空间）
@@ -69,11 +138,9 @@ PreProcessing
 ```
 有环路时:                          无环路时:
   ① 广度优先换热扫描                 ① 广度优先换热扫描
-  ② 环路优先压降扫描                 ② 广度优先压力更新
-  ③ fsolve 流量重分配                ③ 残差收敛 → 退出
-  ④ 广度优先压力更新
-  ⑤ fsolve 二次流量重分配
-  ⑥ 环路压降收敛 → 退出
+  ② 广度优先压力更新                 ② 残差收敛 → 退出
+  ③ Newton 流量重分配
+  ④ 环路压降收敛 → 退出
 ```
 
 **调用链：**
@@ -88,14 +155,16 @@ Main
   │     输出: heatPaths, pdropPaths, predecessors_in, predecessors_out
   │
   ├─ scanTubes(heatPaths, ...)        [嵌套子函数]
-  │     └─ alg(x0, BD, ..., CV, N, solver_flag, Prop_handle)  [嵌套子函数]
-  │           ├─ R_cal_10()  → Prop1() ×3  工质侧换热+压降
-  │           └─ DryA_cal_10()             空气侧换热+压降
+  │     ├─ upstream passing: tube_inlet(tube) = tube_outlet(upstream)
+  │     ├─ bend_in check → bend_cal() 入口弯管压降
+  │     ├─ CV loop: alg(x0, BD, ..., solver_flag, Prop_handle)  [嵌套子函数]
+  │     │     ├─ solver_flag=1: R_cal_10() + DryA_cal_10()  换热
+  │     │     ├─ solver_flag=2: R_cal_10()                   压力
+  │     │     └─ solver_flag=3: 等焓不动点                   弯管压降
+  │     ├─ CV loop end: tube_outlet(tube) = CV_n outlet
+  │     └─ bend_out check → bend_cal() 出口弯管压降
   │
-  ├─ scanTubes(pdropPaths, ...)       环路压降扫描
-  ├─ fsolve(@uF)                      环路流量重分配
-  ├─ scanTubes(heatPaths, ...)        压力场二次更新
-  ├─ fsolve(@uF)                      二次流量重分配
+  ├─ Newton 流量更新
   │
   └─ PostProcessing                   自动后处理
 ```
@@ -104,15 +173,16 @@ Main
 
 | 函数 | 签名 | 职责 |
 |------|------|------|
-| `scanTubes` | `function [h_R_in, h_R_out, T_MA_in, T_MA_out, p_R_in, p_R_out, p_MA_in, p_MA_out, dp_tube, residual_max] = scanTubes(paths, predecessors, ...)` | 沿指定管序遍历，逐管逐 CV 调用 `alg()` |
-| `alg` | `function F = alg(x0, BD, InletBD, GeoCondition, CV, N, solver_flag, Prop_handle)` | 单 CV 不动点迭代：solver_flag=1 换热量，=2 压降 |
-| `uF` | `function F = uF(u, R_flow, N, mdot0)` | 环路基向量 F(u) = (dp_tube)' × N，供 fsolve 求解流量重分配 |
+| `scanTubes` | `function [..., h_R_tube_outlet, p_R_tube_outlet] = scanTubes(paths, pre_in, pre_out, ..., h_R_tube_inlet, p_R_tube_inlet, h_R_tube_outlet, p_R_tube_outlet, ...)` | 沿指定管序遍历，逐管逐 CV 调用 `alg()`，管级变量贯穿 |
+| `alg` | `function [F, cache_R_out, cache_MA_out] = alg(x0, BD, InletBD, GeoCondition, CV, N, solver_flag, Prop_handle, cache_R_in, cache_MA_in)` | 单 CV 不动点迭代：solver_flag=1 换热量，=2 压降，=3 弯管压降 |
+| `bend_cal` | `function dp_out = bend_cal(h_in, p_in, mdot, L_geom, Geo, Ph)` | 弯管压降（MSH沿程+L_equiv），返回 MPa |
+| `bend_len` | `function Lb = bend_len(k1, k2, Gc)` | 管间几何长度：弧长+直线段，利用 P_row/P_col 推导 |
 
 **依赖路径：** `Lib/` `Solver/` `PostProcessing/` `PreProc/`
 
 ---
 
-### Main_loop_base.m（脚本 + 4 个嵌套子函数）
+### Main_loop_base.m（脚本 + 6 个嵌套子函数）
 
 **职责：** 两阶段环路优先求解器，旨在通过 Phase1 快速稳定流量分布来减少总迭代数。
 
@@ -121,42 +191,36 @@ Main
 ```
 Phase 1: 恒压热力扫描 + 流量更新（不更新压力场）
   ├─ 全局饱和物性缓存 sat_global（p = p_R_inlet，所有 CV/迭代共用）
-  ├─ scanTubes_phase1（仅热力扫描，提取压阻 dp_CV）
+  ├─ scanTubes_phase1（仅热力扫描，提取压阻 dp_CV，含 bend 压阻）
   ├─ Newton 流量更新（同 Main）
-  └─ 步出判据：前后两次流量相对变化 < 1e-1
+  └─ 步出判据：前后两次流量相对变化 < 1e-2
        ↓
-Phase 2: 完整热力+压力+流量更新（与 Main 完全一致）
-  ├─ scanTubes(solver_flag=1)  热力扫描
-  ├─ scanTubes(solver_flag=2)  压力扫描
+Phase 2: 完整热力+压力+流量更新（与 Main 一致）
+  ├─ scanTubes(solver_flag=1)  热力扫描（含 bend）
+  ├─ scanTubes(solver_flag=2)  压力扫描（含 bend）
   ├─ Newton 流量更新
   └─ 收敛判据：同 Main
 ```
 
 **嵌套子函数：**
 
-| 函数 | 签名 | 职责 |
-|------|------|------|
-| `scanTubes_phase1` | `function [..., R_flow, dp_tube, residual_max] = scanTubes_phase1(paths, ..., sat_global)` | Phase1 专用：仅热力扫描 + 提取各 CV 压阻，压力场不变，全局饱和缓存 |
-| `alg_phase1` | `function [F, dp_CV, cache_R_out, cache_MA_out] = alg_phase1(x0, BD, ..., sat_global)` | 与 `alg(solver_flag=1)` 等价，额外返回 dp_CV (Pa)，复用 sat_global |
-| `scanTubes` | 同 Main.m | Phase2 使用，与 Main 完全一致 |
-| `alg` | 同 Main.m | Phase2 使用，带入口缓存转发（无 sat_global） |
+| 函数 | 职责 |
+|------|------|
+| `scanTubes_phase1` | Phase1 专用：仅热力扫描 + 提取各 CV 压阻，压力场不变，全局饱和缓存，含弯管压阻 |
+| `alg_phase1` | 与 `alg(solver_flag=1)` 等价，额外返回 dp_CV (Pa)，复用 sat_global；solver_flag=3 为弯管压降 |
+| `scanTubes` | Phase2 使用，与 Main 完全一致 |
+| `alg` | Phase2 使用，含 solver_flag=3 弯管压降 |
+| `bend_cal_phase1` | Phase1 弯管压降（MSH沿程+L_equiv），返回 Pa |
+| `bend_cal` | Phase2 弯管压降，返回 MPa |
 
 **与 Main.m 的关键差异：**
 
 | 特性 | Main | Main_loop_base Phase1 |
 |------|------|----------------------|
 | 压力场 | 每轮迭代更新 | 全程恒定 = p_R_inlet |
-| 饱和物性 | 每 CV 独立计算 (p_out) | 全局缓存 (p_inlet)，9 项 |
+| 饱和物性 | 每 CV 独立计算 (p_out) | 全局缓存 (p_inlet)，11 项 |
 | 扫描内容 | 热力 + 压力（2 次 scanTubes/iter） | 仅热力（1 次 scanTubes_phase1/iter） |
-| 缓存转发 | 跨 CV 入口/出口（热力扫描） | sat_global + 跨 CV 入口/出口 |
-
-**性能分析（16 管 4 环路，2026-05-25）：**
-
-Phase1 理论优势（省压力扫描）被两个因素抵消：
-1. 流量稳定需额外热力扫描迭代（当前 case: 2 次 Phase1 + 1 次 Phase2 vs Main 的 4 次迭代，但 Main 每次含热力+压力两次扫描，总扫描次数相当）
-2. Phase1 步出判据 `delta_mdot < 1e-1` 偏松，过早退出后 Phase2 仍需实质修正
-
-**结论**：精度无损失（偏差 < 0.05%），但速度未改善（+7%）。下一步研究方向：收紧 Phase1 步出阈值、自适应 Phase1/Phase2 切换。
+| 弯管压降 | bend_cal (MPa) | bend_cal_phase1 (Pa，仅压阻) |
 
 ---
 
@@ -180,14 +244,39 @@ PostProcessing
 
 ## 二、核心数据结构
 
+### 2.1 管级变量（Demo1.14 新增）
+
+| 变量 | 维度 | 物理含义 |
+|------|------|----------|
+| `h_R_tube_inlet` | 1×Tube_num | 管进口焓（弯管之前） |
+| `p_R_tube_inlet` | 1×Tube_num | 管进口压力（弯管之前） |
+| `h_R_tube_outlet` | 1×Tube_num | 管出口焓（弯管之后） |
+| `p_R_tube_outlet` | 1×Tube_num | 管出口压力（弯管之后） |
+
+**传递规则**（scanTubes 开头）：
+```
+入口管（无上游）: tube_inlet = 集管入口值
+串联（单上游）  : tube_inlet = upstream.tube_outlet
+汇流（多上游）  : tube_inlet = weighted_avg(upstream.tube_outlet) by mass flow
+```
+
+**管内 CV 链接**：
+```
+tube_inlet ─→ [bend_in?] ─→ CV₁ ─→ ... ─→ CV_n ─→ [bend_out?] ─→ tube_outlet
+```
+
+弯管存在时：CV1 入口压力 = tube_inlet.p - dp_bend_in；CVn 出口后 tube_outlet.p = CVn.p_out - dp_bend_out。焓不变（等焓）。
+
+### 2.2 结构体
+
 | 结构体 | 产生于 | 关键字段 | 消耗于 |
 |--------|--------|----------|--------|
 | `TCinf` | `HX_Path_Planner1` → `cbExport` | `TC_matrix` `inlet_num` `outlet_num` `FlowDirection` `row` `col` `con_num` `Tube_num` | `GenerateGeo` `mdot_Initial` `buildPath` `plotAlongPath` `summaryTable` `exportHxPerf` |
-| `GeoCondition` | `GenerateGeo(TCinf)` | `L` `D_inner` `D_outer` `r` `A_R` `A_MA` `P_row` `P_col` `Fin_pitch` `dx_fin` `Tube_num` `row` `col` | `GenerateBD` `R_cal_10` `DryA_cal_10` `summaryTable` `exportHxPerf` |
-| `BDCondition` | `GenerateBD(GeoCondition, Prop_handle)` | `BD_R( h_R_inlet mdot_R_inlet p_R_inlet )` `BD_MA( T_MA_inlet mdot_MA_inlet p_MA_inlet x_MA_inlet )` `CV_num` | `mdot_Initial` `R_cal_10` `DryA_cal_10` `summaryTable` `exportHxPerf` |
+| `GeoCondition` | `GenerateGeo(TCinf)` | `L` `D_inner` `D_outer` `r` `A_R` `A_MA` `P_row` `P_col` `Fin_pitch` `dx_fin` `Tube_num` `row` `col` | `GenerateBD` `R_cal_10` `DryA_cal_10` `bend_len` `summaryTable` `exportHxPerf` |
+| `BDCondition` | `GenerateBD(GeoCondition, Prop_handle)` | `BD_R( h_R_inlet mdot_R_inlet p_R_inlet )` `BD_MA( T_MA_inlet mdot_MA_inlet p_MA_inlet )` `CV_num` | `mdot_Initial` `R_cal_10` `DryA_cal_10` `summaryTable` `exportHxPerf` |
 | `Prop_handle` | `Prop_load(libLoc, R, ...)` | ~26 个 `griddedInterpolant` 函数句柄（工质+湿空气） | `Prop1` `GenerateBD` `DryA_cal_10` `R_cal_10` 以及各后处理函数 |
 | `N` | `mdot_Initial(...)` | Tube_num × n_loops 矩阵，零空间基向量 | `Main` `buildPath` `plotLoopBalance` `summaryTable` `exportHxPerf` |
-| `hxPerf` | `exportHxPerf(...)` | `Geo` `Topo` `Boundary` `Flow` `Thermal` `Performance` | `fmincon` / `ga` 等优化器 |
+| `hxPerf` | `exportHxPerf(...)` | `Geo` `Topo` `Boundary` `Flow` `Thermal` `Performance` | 优化器 |
 
 ---
 
@@ -206,9 +295,11 @@ Prop1(p, h, Prop_handle)              ← 单点工质查询
 ```
 
 **关联式：**
-- 工质侧摩擦系数: Haaland
-- 工质侧单相换热: Gnielinski
-- 工质侧两相换热: Cavallini and Zecchin
+- 工质侧单相摩擦系数: Haaland / Blasius / Fang（全 Re 范围，层流→过渡→湍流）
+- 工质侧单相换热: Gnielinski（层流-湍流线性过渡）
+- 工质侧两相换热: Cavallini and Zecchin（冷凝）
+- 工质侧两相压降: Müller-Steinhagen and Heck (MSH)
+- 弯管压降: MSH沿程(L_geom + L_equiv) + Paliwoda 两相修正，L_equiv = K·D/(2f)，K=1.5
 - 空气侧: Wang-Chi-Chang Plate-Fin (j 因子 + f 因子)
 
 ---
@@ -221,6 +312,7 @@ Prop1(p, h, Prop_handle)              ← 单点工质查询
 | 有环路 | `max(abs((dp_tube')*N)) < 1e-6` **且** `residual_max < 1e-3` |
 | 外层迭代上限 | 10 轮 |
 | CV 内层不动点迭代上限 | 100 轮 |
+| 弯管内层不动点迭代上限 | 15 轮（bend_cal_phase1）/ 100 轮（bend_cal），容差 1e-6 |
 
 ---
 
@@ -249,12 +341,12 @@ exportHxPerf.m                                                                  
 
 ## 六、注意事项
 
-1. **`buildPath.m` 函数名不一致：** 文件名为 `buildPath.m`，`Main.m` 调用为 `buildPath(...)`，但内部声明为 `function [...] = buildPaths(A, N)`（带 s）。Windows 不区分大小写不报错，跨平台需注意。
+1. **`buildPath.m` 函数名不一致：** 文件名为 `buildPath.m`，调用为 `buildPath(...)`，但内部声明为 `function [...] = buildPaths(A, N)`（带 s）。Windows 不区分大小写不报错，跨平台需注意。
 
-2. **`Main.m` / `PreProcessing.m` / `PostProcessing.m` 均为脚本：** 不是函数，直接在 base workspace 操作变量，无显式参数传递。`Main.m` 内含 3 个嵌套子函数（`uF` `alg` `scanTubes`），仅在 Main.m 作用域内可见。
+2. **`Main.m` / `PreProcessing.m` / `PostProcessing.m` 均为脚本：** 不是函数，直接在 base workspace 操作变量，无显式参数传递。`Main.m` 内含 4 个嵌套子函数（`alg` `scanTubes` `bend_cal` `bend_len`）。
 
 3. **REFPROP 外部依赖：** 整个物性体系依赖 `getFluidProperty()`，需 REFPROP 安装并位于 MATLAB 路径中。
 
-4. **压力单位约定：** 所有 `p_*` 变量为 MPa，`dp_tube` 为 MPa（显示时 ×1e6 转 Pa）。
+4. **压力单位约定：** 所有 `p_*` 变量为 MPa，`dp_tube` 为 MPa（显示时 ×1e6 转 Pa），`bend_cal_phase1` 返回 Pa，`bend_cal` 返回 MPa。
 
 5. **HX_Path_Planner1 窗口持久化：** 点击关闭按钮隐藏而非销毁，句柄保存在 `hxDesigner`，`figure(hxDesigner)` 可随时唤出。
