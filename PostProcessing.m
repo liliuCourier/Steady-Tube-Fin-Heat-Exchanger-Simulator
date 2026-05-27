@@ -24,7 +24,8 @@ plotLoopBalance(N, R_flow, mdot0, mdot_R, dp_tube, u0, options);
 
 %% 3. 整体性能汇总表
 summaryTable(TCinf, GeoCondition, BDCondition, h_R_in, h_R_out, ...
-    p_R_in, p_R_out, T_MA_in, T_MA_out, mdot_R, dp_tube, heatPaths, time, Prop_handle, N);
+    p_R_in, p_R_out, T_MA_in, T_MA_out, mdot_R, dp_tube, heatPaths, time, ...
+    Prop_handle, N, p_R_tube_inlet, p_R_tube_outlet);
 
 %% 3.5 各管流量分布
 Tube_num = GeoCondition.Tube_num;

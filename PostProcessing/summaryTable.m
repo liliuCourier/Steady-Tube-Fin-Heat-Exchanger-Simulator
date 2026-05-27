@@ -1,5 +1,6 @@
 function summaryTable(TCinf, GeoCondition, BDCondition, h_R_in, h_R_out, ...
-    p_R_in, p_R_out, T_MA_in, T_MA_out, mdot_R, dp_tube, heatPaths, time, Prop_handle, N)
+    p_R_in, p_R_out, T_MA_in, T_MA_out, mdot_R, dp_tube, heatPaths, time, ...
+    Prop_handle, N, p_R_tube_inlet, p_R_tube_outlet)
 % 换热器整体性能汇总表：输出关键性能指标到命令行
 
 Tube_num = GeoCondition.Tube_num;
@@ -85,12 +86,15 @@ fprintf('\n');
 
 % 管出口状态矩阵
 fprintf('\n各管出口状态:\n');
-fprintf('  管号  流量(kg/s)  出口焓(kJ/kg)  出口压力(MPa)  出口温度(K)   压降(Pa)   换热量(W)\n');
-fprintf('  ----  ----------  -------------  --------------  -----------  ---------  ----------\n');
+fprintf('  管号  流量(kg/s)  出口焓(kJ/kg)  出口压力(MPa)  出口温度(K)   管总压降(Pa) 入口弯管(Pa) 出口弯管(Pa)  CV摩擦(Pa)  换热量(W)\n');
+fprintf('  ----  ----------  -------------  --------------  -----------  ------------  ------------  ------------  ----------  ----------\n');
 for t = 1:Tube_num
-    fprintf('  %4d  %10.6f  %13.2f  %14.6f  %11.2f  %9.2f  %10.1f\n', ...
+    dp_bend_in  = (p_R_tube_inlet(t) - p_R_in(1,t)) * 1e6;
+    dp_bend_out = (p_R_out(end,t) - p_R_tube_outlet(t)) * 1e6;
+    dp_CV       = (p_R_in(1,t) - p_R_out(end,t)) * 1e6;
+    fprintf('  %4d  %10.6f  %13.2f  %14.6f  %11.2f  %12.2f  %12.2f  %12.2f  %10.2f  %10.1f\n', ...
         t, mdot_R(t), h_R_out(end,t), p_R_out(end,t), T_R_out(t), ...
-        dp_tube(t)*1e6, heatload_tube(t));
+        dp_tube(t)*1e6, dp_bend_in, dp_bend_out, dp_CV, heatload_tube(t));
 end
 fprintf('\n');
 end
