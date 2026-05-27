@@ -120,6 +120,7 @@ if has_loops
         for j = 1:tube_cal
             R_t(j) = R_flow_history{j}(t);
         end
+        R_t = max(R_t, eps);
         semilogy(1:tube_cal, R_t, '.-', 'Color', colors(t,:), ...
             'LineWidth', 1.0, 'MarkerSize', 5);
         hold on;
@@ -164,6 +165,7 @@ dp_loop_history(i1+1:end)   = [];
 figure('Name', '收敛历史', 'NumberTitle', 'off');
 
 subplot(1, 2, 1);
+residual_history = max(residual_history, eps);
 semilogy(1:i1, residual_history, 'b-o', 'LineWidth', 1.5, 'MarkerSize', 8);
 xlabel('迭代次数'); ylabel('能量残差');
 title(sprintf('能量残差收敛历史 (最终: %.2e)', residual_history(end)));
@@ -175,7 +177,8 @@ if isempty(N)
         'HorizontalAlignment', 'center', 'FontSize', 12);
     title('环路压降平衡 (N/A)');
 else
-    semilogy(1:i1, dp_loop_history*1e6, 'r-s', 'LineWidth', 1.5, 'MarkerSize', 8);
+    dp_loop_history_plot = max(dp_loop_history*1e6, eps);
+    semilogy(1:i1, dp_loop_history_plot, 'r-s', 'LineWidth', 1.5, 'MarkerSize', 8);
     xlabel('迭代次数'); ylabel('环路压降残差 (Pa)');
     title(sprintf('环路压降收敛历史 (最终: %.2e Pa)', dp_loop_history(end)));
     grid on;
@@ -291,6 +294,7 @@ for k = 1:length(iter_edges)-1
 end
 
 % 综合指标曲线
+err_total = max(err_total, eps);
 semilogy(1:tube_cal, err_total, 'k.-', 'LineWidth', 2.5, 'MarkerSize', 18);
 
 % 标注扫描类型

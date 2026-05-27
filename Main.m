@@ -335,7 +335,7 @@ if solver_flag == 1
     sat_cache{11} = sat_in{11};  % hsatvap: p_in≈p_out
 
     for i = 1:loopmax
-        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props,sat_cache);
+        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,inlet_props,sat_cache);
 
         % 获得计算结果
         %Tin_R        = out{1};
@@ -391,7 +391,7 @@ elseif solver_flag == 2
 
     for i = 1:loopmax
 
-        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props);
+        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,inlet_props);
         dp_R        = out{4};
 
         out_MA = DryA_cal_10(x0_MA,BD_MA,GeoCondition,CV,N,Prop_handle,inlet_air_props);
