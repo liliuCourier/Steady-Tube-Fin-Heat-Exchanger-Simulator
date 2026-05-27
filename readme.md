@@ -54,6 +54,35 @@
 
 **为何改指数：** Domanski (1989) 最早采用 $\Delta p = R \cdot m^{1.75}$（湍流 Blasius 标度），Ding (2004) 沿用。$1.81$ 比 $2.0$ 更贴近管内流动的物理标度，且配合 `heatPaths` 统一路径，避免了 `pdropPaths` 额外扫描带来的计算开销。
 
+### 5/26 Demo1.14 — U型弯压降正式处理
+
+**数据结构**：新增管进出口变量 `h_R_tube_inlet`/`h_R_tube_outlet`/`p_R_tube_inlet`/`p_R_tube_outlet`（1×Tube_num）。管的进口物理上位于弯管之前，控制体 CV1 位于弯管之后；管出口物理上位于弯管之后，控制体 CVn 位于弯管之前。弯管压降通过这两个层面的压力差体现。
+
+**弯管归属规则**（基于 `predecessors_in`/`predecessors_out`）：
+
+| 场景 | 判断 | 弯管位置 |
+|---|---|---|
+| 串联（单下游） | `predecessors_out{tube} == 1` | 出口弯管，归本管 |
+| 分流点下游 | 上游管的下游数 > 1 | 入口弯管，归本管 |
+
+**弯管压降公式**：
+
+$$L_{geom} = \text{弧长} + \text{管间直线段（几何推导）}$$
+$$L_{equiv} = \frac{K \cdot D}{2f} \quad (K=1.5)$$
+$$\Delta p_{bend} = \text{MSH}(L_{geom} + L_{equiv}, G, x, \rho, \mu, D)$$
+
+与直管统一使用 Müller-Steinhagen & Heck 沿程公式 + 局部阻力当量为沿程长度。去除了老版本 `L = L + 30*D_inner` 等效长度法。
+
+**改动文件**：`Main_loop_base.m`、`Main.m`、`R_cal_10.m`
+
+---
+
+### 5/26 Demo1.13（稳定标签 v0.9-stable-2026-05-26）
+
+弯管改动前的稳定存档版本。包含：全范围摩擦因子（层流→过渡→湍流）覆盖 / MSH 两相压降公式
+
+---
+
 ### 5/25 Demo1.12
 
 本次更新聚焦**稳定性**与**计算速度**两大方向：消除迭代断点解决振荡问题，物性缓存复用大幅削减 REFPROP 调用开销。
