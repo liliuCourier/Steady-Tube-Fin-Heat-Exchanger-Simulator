@@ -152,7 +152,7 @@ G = dpdL_lo + 2*(dpdL_go - dpdL_lo)*x_CV;
 % %L = L + 50*D_inner;
 % dp_f_CV = Th*dpdL_lo*L/CV_num;
 
-L = L + 30*D_inner;
+%L = L + 30*D_inner;
 %dp_f_CV =   (f_CV*L/CV_num).*(mdot.^2)./(2*D_CV*D_inner*S^2);    % Pa  摩擦压损
 dp_f_CV = L*(G*(1-x_CV)^(1/3)+ dpdL_go*x_CV^3);  % Müller-Steinhagen and Heck (1986) 公式
 dp_v_CV =   16*mdot.^2/(pi^2*D_inner^4).*(1./Dout_CV - 1./Din_CV);   % Pa  速度压损

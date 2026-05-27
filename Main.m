@@ -19,7 +19,6 @@ if ~exist('BDCondition','var')
     error('BDCondition 未找到，请先运行 PreProcessing');
 end
 
-
 %% 初始化求解
 
 [N,u0,mdot0,mdot_R_init,exitflag] = mdot_Initial(BDCondition,GeoCondition,TCinf);
@@ -27,30 +26,30 @@ end
 % 生成广度优先路径和环路优先路径
 [heatPaths,pdropPaths,predecessors_in,predecessors_out] = buildPath(TCinf.TC_matrix,N);
 %%
-
 CV_num = BDCondition.CV_num;
 row = GeoCondition.row;
 Tube_num = GeoCondition.Tube_num;
-%Uband_length = GeoCondition.Uband_length;
 
-% 初始化其余热力场和压力场
+% 边界条件
 h_R_inlet       = BDCondition.BD_R.h_R_inlet;
 p_R_inlet       = BDCondition.BD_R.p_R_inlet;
-
-% 非均匀的风场请在这设置
 mdot_MA_inlet   = BDCondition.BD_MA.mdot_MA_inlet;
 T_MA_inlet      = BDCondition.BD_MA.T_MA_inlet;
 p_MA_inlet      = BDCondition.BD_MA.p_MA_inlet;
 
-% 仍然使用流向判断，空气侧的排列向内，工质则是沿着流向，同排列为1，非同为0，生成的初始条件矩阵
-% 工质侧
+% 物性场初始化
 p_R_in  = p_R_inlet*ones(CV_num,Tube_num);
 p_R_out = p_R_inlet*ones(CV_num,Tube_num);
-
 h_R_in  = h_R_inlet*ones(CV_num,Tube_num);
 h_R_out = h_R_inlet*ones(CV_num,Tube_num);
-
 mdot_R  = mdot_R_init;
+
+% 空气侧
+T_MA_in     = T_MA_inlet*ones(CV_num,Tube_num);
+T_MA_out    = T_MA_inlet*ones(CV_num,Tube_num);
+p_MA_in     = p_MA_inlet*ones(CV_num,Tube_num);
+p_MA_out    = p_MA_inlet*ones(CV_num,Tube_num);
+mdot_MA     = mdot_MA_inlet/row/CV_num*ones(CV_num,Tube_num);
 
 % 管进出口物性初始化
 h_R_tube_inlet  = h_R_inlet * ones(1, Tube_num);
@@ -58,22 +57,12 @@ h_R_tube_outlet = h_R_inlet * ones(1, Tube_num);
 p_R_tube_inlet  = p_R_inlet * ones(1, Tube_num);
 p_R_tube_outlet = p_R_inlet * ones(1, Tube_num);
 
-% 空气侧
-T_MA_in     = T_MA_inlet*ones(CV_num,Tube_num);
-T_MA_out    = T_MA_inlet*ones(CV_num,Tube_num);
-
-p_MA_in     = p_MA_inlet*ones(CV_num,Tube_num);
-p_MA_out    = p_MA_inlet*ones(CV_num,Tube_num);
-
-% 非均匀的风场请在这设置
-mdot_MA     = mdot_MA_inlet/row/CV_num*ones(CV_num,Tube_num);
-
+%%
 dp_tube = zeros(Tube_num,1);
-R_flow = [];  % 初始化（无环路时保持为空）
+R_flow = [];            % 初始化（无环路时保持为空）
 K_bend  = 1.5;          % U型弯单相阻力系数 (180°回弯, R/D≈1.5)
-%dp_Uband = zeros(Tube_num,1);
 
-% 求解
+% 求解设置
 % 迭代上限设置
 loopmax = 10;
 % 残差设置
@@ -107,6 +96,8 @@ iter_dp    = cell(loopmax, 1);
 % 流量分配演进记录（u0 为环路流量解）
 u0_history = cell(loopmax+1, 1);
 u0_history{1} = u0;
+
+%%
 
 tic
 for i1 = 1:loopmax
@@ -214,10 +205,6 @@ for i1 = 1:loopmax
         u0 = u;
         u0_history{i1+1} = u0;
 
-        % 原 fsolve 非线性求解（保留备查）
-        % u = fsolve(@(u)uF(u,R_flow,N,mdot0,R_coef),u0,options);
-        % mdot_R = mdot0 + N*u;
-
         % 环路压降收敛判断
         %     if max(abs((dp_tube')*N)) < 1e-6
         %         disp("压降收敛")
@@ -246,7 +233,7 @@ dp_loop_max = dp_loop_history(i1);
 % 每根管的最终合理的压阻系数：
 % log(dp_tube*1e6./R_flow)./log(mdot_R)
 fprintf('求解完成，耗时 %.2f s，正在运行后处理...\n', time);
-% 
+
 % % 自动运行后处理
 try
     PostProcessing;
@@ -254,13 +241,8 @@ catch ME
     fprintf('后处理运行出错: %s\n', ME.message);
 end
 
-%%
-% function F = uF(u,R_flow,N,mdot0,R_coef)
-% dp_tube = (R_flow).*(mdot0 + N*u).^R_coef;
-% dp_loop = (dp_tube')*N;
-% F = dp_loop;
-% end
 
+%%
 function  F = alg(x0,BD,InletBD,GeoCondition,CV,N,solver_flag,Prop_handle)
 % 迭代上限
 loopmax = 100;
@@ -435,11 +417,13 @@ end
 
 end
 
+%%
+
 
 function [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
-          p_R_in, p_R_out, p_MA_in, p_MA_out, ...
-          dp_tube, residual_max, ...
-          h_R_tube_outlet, p_R_tube_outlet] = scanTubes(...
+    p_R_in, p_R_out, p_MA_in, p_MA_out, ...
+    dp_tube, residual_max, ...
+    h_R_tube_outlet, p_R_tube_outlet] = scanTubes(...
     tubePaths, predecessors_in, predecessors_out, ...
     h_R_in, h_R_out, T_MA_in, T_MA_out, ...
     p_R_in, p_R_out, p_MA_in, p_MA_out, ...
@@ -455,11 +439,22 @@ nTubes = length(tubePaths);
 for i2 = 1:nTubes
     tube = tubePaths(i2);
 
+    % 传入控制体参数，作为迭代初值使用
+    mdot_R_tube = mdot_R(tube);
+    mdot_MA_tube = mdot_MA(:, tube);
+
     p_R_in_tube  = p_R_in(:, tube);
     p_R_out_tube = p_R_out(:, tube);
     h_R_in_tube  = h_R_in(:, tube);
     h_R_out_tube = h_R_out(:, tube);
 
+    T_MA_in_tube = T_MA_in(:, tube);
+    T_MA_out_tube = T_MA_out(:, tube);
+    p_MA_in_tube = p_MA_in(:, tube);
+    p_MA_out_tube = p_MA_out(:, tube);
+
+
+    % 根据上游信息调整管的进口条件
     tube_upper = predecessors_in{tube};
     if size(tube_upper, 2) == 0
         h_R_tube_inlet(tube) = h_R_inlet;
@@ -471,25 +466,20 @@ for i2 = 1:nTubes
         p_R_tube_inlet(tube) = p_R_tube_outlet(tube_upper(1));
         h_R_tube_inlet(tube) = h_R_tube_outlet(tube_upper) * mdot_R(tube_upper) / sum(mdot_R(tube_upper));
     end
+
+    % 管的第一个控制体暂且先使用管进口参数
     h_R_in_tube(1) = h_R_tube_inlet(tube);
     p_R_in_tube(1) = p_R_tube_inlet(tube);
-
-    mdot_R_tube = mdot_R(tube);
-    mdot_MA_tube = mdot_MA(:, tube);
-
-    T_MA_in_tube = T_MA_in(:, tube);
-    T_MA_out_tube = T_MA_out(:, tube);
-    p_MA_in_tube = p_MA_in(:, tube);
-    p_MA_out_tube = p_MA_out(:, tube);
-
+    
     flowDirection = TCinf.FlowDirection(tube);
 
     % === bend_in: 上游分流 → CV1入口含弯管压降 ===
+    % b AI就喜欢写子函数来进行调用
     is_bi = ~isempty(predecessors_in{tube}) && ...
             length(predecessors_out{predecessors_in{tube}(1)}) > 1;
     if is_bi
         dp_u = bend_cal(h_R_in_tube(1), p_R_in_tube(1), ...
-            mdot_R_tube, GeoCondition, Prop_handle);
+            mdot_R_tube, GeoCondition, Prop_handle);            % MPa
         p_R_in_tube(1) = p_R_in_tube(1) - dp_u;
     end
 
@@ -550,6 +540,7 @@ for i2 = 1:nTubes
         end
     end
 
+    % 这里是一定要把参数传递进来，不然变量就会一直变
     h_R_tube_outlet(tube) = h_R_out_tube(end);
     p_R_tube_outlet(tube) = p_R_out_tube(end);
 
@@ -566,7 +557,8 @@ for i2 = 1:nTubes
         h_R_in(:, tube) = h_R_in_tube;
         T_MA_in = [T_MA_inlet * ones(CV_num, row), T_MA_out(:, 1:end-row)];
     else
-        dp_tube(tube) = p_R_in_tube(1) - p_R_out_tube(CV_num);
+        % 这里AI把dp_tube弄错了，显然是管的进口减出口
+        dp_tube(tube) = p_R_tube_inlet(tube) - p_R_tube_outlet(tube);
         p_R_in(:, tube) = p_R_in_tube;
         p_MA_in = [p_MA_inlet * ones(CV_num, row), p_MA_out(:, 1:end-row)];
     end
@@ -577,7 +569,7 @@ function dp_out = bend_cal(h_in, p_in, mdot, Geo, Ph)
 % 弯管压降 (K=1.5, 等焓不动点), 返回 MPa
     D = Geo.D_inner;  S = pi*D^2/4;  G = abs(mdot)/S;
     p_out = p_in * 0.98;
-    for i = 1:15
+    for i = 1:100
         p_avg = (p_in + p_out)/2;
         [~,~,~,~,x_b,~,v_L,v_V,~,~,~,~,~,~] = Prop1(real(p_avg), h_in, Ph);
         rho_L = 1/v_L;  Kb = 1.5;  dp_b = Kb * G^2 / (2*rho_L);
@@ -586,7 +578,7 @@ function dp_out = bend_cal(h_in, p_in, mdot, Geo, Ph)
             dp_b = (1 + x_b*(rho_L-rho_G)/rho_G) * dp_b;
         end
         p_new = p_in - dp_b/1e6;
-        if abs(p_new-p_out) < 1e-8, p_out = p_new; break; end
+        if abs(p_new-p_out) < 1e-6, p_out = p_new; break; end
         p_out = p_new;
     end
     dp_out = (p_in - p_out);  % MPa
