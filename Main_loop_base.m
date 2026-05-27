@@ -393,7 +393,7 @@ if solver_flag == 1
     sat_cache{10} = sat_in{10}; sat_cache{11} = sat_in{11};
 
     for i = 1:loopmax
-        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props,sat_cache);
+        out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,inlet_props);
 
         HTC_R = out{3};
         dEF_R = out{5};
@@ -554,7 +554,7 @@ end
 sat_cache = sat_global;  % Phase1 压力不变，入口=出口饱和物性
 
 for i = 1:loopmax
-    out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,[],inlet_props,sat_cache);
+    out = R_cal_10(x0_R,BD_R,GeoCondition,CV,Prop_handle,inlet_props);
 
     HTC_R = out{3};
     dEF_R = out{5};
@@ -858,22 +858,33 @@ end
 end
 
 function dp_out = bend_cal_phase1(h_in, p_in, mdot, L_geom, Geo, Ph, sat_glb)
-% 弯管压降 (Phase1): L_total=几何长+当量长, MSH沿程 + Paliwoda两相, 返回 Pa
+% 弯管压降 (Phase1): Xu-Fang 2013 两相修正, 返回 Pa
     D = Geo.D_inner;  S = pi*D^2/4;  G = abs(mdot)/S;
-    p_out = p_in * 0.98;
+    p_out = p_in;
     for i = 1:15
         p_avg = (p_in + p_out)/2;
         [~,~,~,~,x_b,~,v_L,v_V,~,~,~,~,~,~] = Prop1(real(p_avg), h_in, Ph, sat_glb);
-        rho_L = 1/v_L;
+        rho_L = 1/v_L;  rho_G = 1/v_V;
         Re = G*D/(Ph.Nu_liq(0,real(p_avg))*1e-6);
-        if Re<=2000, f=16/Re; elseif Re<1e5, f=0.079/Re^0.25;
-        else, f_D=0.25/(log10(150.39/Re^0.98865-152.66/Re))^2; f=f_D/4; end
-        L_eq = 1.5 * D / (2*f);   % K=1.5 → 当量长度
+        if Re<=2000, f=64/Re; elseif Re>3000, f=0.25*(log10(150.39/Re^0.98865-152.66/Re))^(-2);
+        else, f=(1.1525*Re+895)*1e-5;  end
+        L_eq = 1.5 * D / (2*f);
         L_tot = L_geom + L_eq;
-        dp_b = 2 * f * G^2 * L_tot / (rho_L * D);
+        dp_Lo = f * G^2 * L_tot / (2*rho_L * D);
         if x_b > 0.05 && x_b < 0.95
-            rho_G = 1/v_V;
-            dp_b = (1 + x_b*(rho_L-rho_G)/rho_G) * dp_b;
+            Re_go = G*D/(Ph.Nu_vap(1,real(p_avg))*1e-6);
+            if Re_go<=2000, f_go=64/Re_go; elseif Re_go>3000, f_go=0.25*(log10(150.39/Re_go^0.98865-152.66/Re_go))^(-2);
+            else, f_go=(1.1525*Re_go+895)*1e-5;  end
+            dpdL_go = f_go * G^2 / (2*rho_G * D);
+            Y = sqrt(dpdL_go / (f*G^2/(2*rho_L*D)));
+            rho_tp = 1/(x_b*v_V + (1-x_b)*v_L);
+            Fr_tp = G^2/(9.81*D*rho_tp^2);
+            We_tp = G^2*D/(rho_tp*0.008);
+            phi2_lo = Y^2*x_b^3 + (1-x_b^2.59)^0.632 * ...
+                (1 + 2*x_b^1.17*(Y^2-1) + 0.00775*x_b^(-0.475)*Fr_tp^0.535*We_tp^0.188);
+            dp_b = phi2_lo * dp_Lo * L_tot;
+        else
+            dp_b = dp_Lo;
         end
         p_new = p_in - dp_b/1e6;
         if abs(p_new-p_out) < 1e-6, p_out = p_new; break; end
@@ -883,22 +894,33 @@ function dp_out = bend_cal_phase1(h_in, p_in, mdot, L_geom, Geo, Ph, sat_glb)
 end
 
 function dp_out = bend_cal(h_in, p_in, mdot, L_geom, Geo, Ph)
-% 弯管压降 (Phase2): L_total=几何长+当量长, MSH沿程, 返回 MPa
+% 弯管压降 (Phase2): Xu-Fang 2013 两相修正, 返回 MPa
     D = Geo.D_inner;  S = pi*D^2/4;  G = abs(mdot)/S;
-    p_out = p_in * 0.98;
+    p_out = p_in;
     for i = 1:15
         p_avg = (p_in + p_out)/2;
         [~,~,~,~,x_b,~,v_L,v_V,~,~,~,~,~,~] = Prop1(real(p_avg), h_in, Ph);
-        rho_L = 1/v_L;
+        rho_L = 1/v_L;  rho_G = 1/v_V;
         Re = G*D/(Ph.Nu_liq(0,real(p_avg))*1e-6);
-        if Re<=2000, f=16/Re; elseif Re<1e5, f=0.079/Re^0.25;
-        else, f_D=0.25/(log10(150.39/Re^0.98865-152.66/Re))^2; f=f_D/4; end
+        if Re<=2000, f=64/Re; elseif Re>3000, f=0.25*(log10(150.39/Re^0.98865-152.66/Re))^(-2);
+        else, f=(1.1525*Re+895)*1e-5;  end
         L_eq = 1.5 * D / (2*f);
         L_tot = L_geom + L_eq;
-        dp_b = 2 * f * G^2 * L_tot / (rho_L * D);
+        dp_Lo = f * G^2 * L_tot / (2*rho_L * D);
         if x_b > 0.05 && x_b < 0.95
-            rho_G = 1/v_V;
-            dp_b = (1 + x_b*(rho_L-rho_G)/rho_G) * dp_b;
+            Re_go = G*D/(Ph.Nu_vap(1,real(p_avg))*1e-6);
+            if Re_go<=2000, f_go=64/Re_go; elseif Re_go>3000, f_go=0.25*(log10(150.39/Re_go^0.98865-152.66/Re_go))^(-2);
+            else, f_go=(1.1525*Re_go+895)*1e-5;  end
+            dpdL_go = f_go * G^2 / (2*rho_G * D);
+            Y = sqrt(dpdL_go / (f*G^2/(2*rho_L*D)));
+            rho_tp = 1/(x_b*v_V + (1-x_b)*v_L);
+            Fr_tp = G^2/(9.81*D*rho_tp^2);
+            We_tp = G^2*D/(rho_tp*0.008);
+            phi2_lo = Y^2*x_b^3 + (1-x_b^2.59)^0.632 * ...
+                (1 + 2*x_b^1.17*(Y^2-1) + 0.00775*x_b^(-0.475)*Fr_tp^0.535*We_tp^0.188);
+            dp_b = phi2_lo * dp_Lo * L_tot;
+        else
+            dp_b = dp_Lo;
         end
         p_new = p_in - dp_b/1e6;
         if abs(p_new-p_out) < 1e-6, p_out = p_new; break; end

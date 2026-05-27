@@ -202,6 +202,9 @@ for i1 = 1:loopmax
         u0 = u;
         u0_history{i1+1} = u0;
 
+        if any(mdot_R <0)
+            disp("流量算出来个负数，请检查压降的计算是不是存在问题，是不是有的管初始流量给少了，算出来的管压损为负数")
+        end
         % 环路压降收敛判断
         %     if max(abs((dp_tube')*N)) < 1e-6
         %         disp("压降收敛")
@@ -562,34 +565,69 @@ for i2 = 1:nTubes
         p_R_in(:, tube) = p_R_in_tube;
         p_MA_in = [p_MA_inlet * ones(CV_num, row), p_MA_out(:, 1:end-row)];
     end
+    if any(dp_tube<0)
+        pause()
+    end
 end
 end
 
 function dp_out = bend_cal(h_in, p_in, mdot, L_geom, Geo, Ph)
-% 弯管压降: L_total=几何长+当量长, MSH沿程 + Paliwoda, 返回 MPa
-D = Geo.D_inner;  S = pi*D^2/4;  G = abs(mdot)/S;
+% 弯管压降: L_total=几何长+当量长, Xu-Fang 2013 两相修正, 返回 MPa
+D_inner = Geo.D_inner;  S = pi*D_inner^2/4;  G = abs(mdot)/S;
 p_out = p_in;
 for i = 1:100
     p_avg = (p_in + p_out)/2;
-    [~,~,~,~,x_b,~,v_L,v_V,~,~,~,~,~,~] = Prop1(p_avg, h_in, Ph);
-    rho_L = 1/v_L;
-    Re = G*D/(Ph.Nu_liq(0,p_avg)*1e-6);
-    if Re<=2000, f=16/Re; elseif Re<1e5, f=0.079/Re^0.25;
-    else, f_D=0.25/(log10(150.39/Re^0.98865-152.66/Re))^2; f=f_D/4; end
-    L_eq = 1.5 * D / (2*f);
-    L_tot = 30*D;%L_geom + L_eq;
-    dp_b = 2 * f * G^2 * L_tot / (rho_L * D);
-    if x_b > 0.05 && x_b < 0.95
-        rho_G = 1/v_V;
-        dp_b = (1 + x_b*(rho_L-rho_G)/rho_G) * dp_b;
+    [~,~,~,~, x_CV, ~,vsatliq_CV,vsatvap_CV,...
+         ~, ~, Nuliq, Nuvap,~, ~] = Prop1(p_avg, h_in, Ph);
+
+    Re_go = G*D_inner/(Nuvap*1e-6);
+    Re_lo = G*D_inner/(Nuliq*1e-6);
+
+    Re_lam = 2000;  Re_tur = 3000;
+
+    if Re_go <= Re_lam
+        f_go = 64 / Re_go;
+    elseif Re_go > Re_tur
+        f_go = 0.25*(log10(150.39/Re_go^0.98865-152.66/Re_go))^(-2);
+    else
+        f_go = (1.1525*Re_go + 895)*1e-5;
     end
+
+    if Re_lo <= Re_lam
+        f_lo = 64 / Re_lo;
+    elseif Re_lo > Re_tur
+        f_lo = 0.25*(log10(150.39/Re_lo^0.98865-152.66/Re_lo))^(-2);
+    else
+        f_lo = (1.1525*Re_lo + 895)*1e-5;
+    end
+
+    dpdL_lo = f_lo*(abs(mdot)/S)^2/(2*D_inner/vsatliq_CV);
+    dpdL_go = f_go*(abs(mdot)/S)^2/(2*D_inner/vsatvap_CV);
+
+    % Xu-Fang 2013 冷凝两相摩擦压降(NED 263, 87-96)
+    % 适用范围: R134a,R22,R410A 等, Dh 0.1–10mm, G 20–800, q 2–55.3
+    Y = sqrt(dpdL_go / dpdL_lo);
+    rho_tp = 1 / (x_CV*vsatvap_CV + (1-x_CV)*vsatliq_CV);  % 均相密度
+    g_acc = 9.81;
+    Fr_tp = (abs(mdot)/S)^2 / (g_acc * D_inner * rho_tp^2);
+    sigma = 0.008;  % N/m, R134a 冷凝近似值
+    We_tp = (abs(mdot)/S)^2 * D_inner / (rho_tp * sigma);
+    phi2_lo = Y^2 * x_CV^3 + (1 - x_CV^2.59)^0.632 * ...
+        (1 + 2*x_CV^1.17*(Y^2 - 1) + 0.00775*x_CV^(-0.475)*Fr_tp^0.535*We_tp^0.188);
+    L = 30*D_inner;
+    dp_b = phi2_lo * dpdL_lo * L;
+
+    % if dp_b <0
+    %     pause()
+    % end
+
     p_new = p_in - dp_b/1e6;
     if abs(p_new-p_out) < 1e-6, p_out = p_new; break;
     elseif i == 50, disp("U型弯压力迭代失败");
     end
-    p_out = p_new;          % MPa
+    p_out = p_new;
 end
-dp_out = (p_in - p_out);    % MPa
+dp_out = (p_in - p_out);
 end
 
 function Lb = bend_len(k1, k2, Gc)

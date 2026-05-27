@@ -25,7 +25,7 @@ A1 = [TC_matrix;b0];
 b = [zeros(con_num,1);mdot_R_inlet];
 
 % 假设已构建好 A1 (r x n) 和 b (r x 1)
-epsilon =  mdot_R_inlet / Tube_num;   % 极小正数下限
+epsilon =  mdot_R_inlet /4;   % 极小正数下限
 
 % 构造线性规划：无目标函数（或设零目标），只需找可行解
 f = zeros(Tube_num, 1);                  % 目标函数系数全零

@@ -84,7 +84,7 @@ end
 
 if Re_lo <= Re_lam
     f_lo = 64 / Re_lo;
-elseif Re_go > Re_tur
+elseif Re_lo > Re_tur
     f_lo = 0.25*(log10(150.39/Re_lo^0.98865-152.66/Re_lo))^(-2);
 else
     f_lo = (1.1525*Re_lo + 895)*1e-5;
@@ -99,7 +99,7 @@ Y = sqrt(dpdL_go / dpdL_lo);
 rho_tp = 1 / (x_CV*vsatvap_CV + (1-x_CV)*vsatliq_CV);  % 均相密度
 g_acc = 9.81;
 Fr_tp = (abs(mdot)/S)^2 / (g_acc * D_inner * rho_tp^2);
-sigma = 0.008;  % N/m, R134a 冷凝近似值
+sigma = 0.0062;  % N/m, R134a 冷凝近似值
 We_tp = (abs(mdot)/S)^2 * D_inner / (rho_tp * sigma);
 phi2_lo = Y^2 * x_CV^3 + (1 - x_CV^2.59)^0.632 * ...
     (1 + 2*x_CV^1.17*(Y^2 - 1) + 0.00775*x_CV^(-0.475)*Fr_tp^0.535*We_tp^0.188);
@@ -139,8 +139,11 @@ dp_f_CV = phi2_lo * dpdL_lo * L/CV_num;
 %dp_f_CV =   (f_CV*L/CV_num).*(mdot.^2)./(2*D_CV*D_inner*S^2);    % Pa  摩擦压损
 % dp_f_CV = L*(G*(1-x_CV)^(1/3)+ dpdL_go*x_CV^3);  % Müller-Steinhagen and Heck (1986) — 已替换为 Xu-Fang 2013
 dp_v_CV =   16*mdot.^2/(pi^2*D_inner^4).*(1./Dout_CV - 1./Din_CV);   % Pa  速度压损
-dp =    (dp_f_CV + dp_v_CV);
+dp =    dp_f_CV + dp_v_CV;
 
+% if dp<0
+%     pause()
+% end
 
 Re_1P = abs(veloctiy_CV)*D_inner/(Nu_CV*1e-6);
 Re_2P = abs(mdot).*(1-x_CV + x_CV.*sqrt(vsatvap_CV./vsatliq_CV))*D_inner/S./(Nusatliq_CV*1e-6./vsatliq_CV);

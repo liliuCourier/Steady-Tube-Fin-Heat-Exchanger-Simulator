@@ -381,3 +381,28 @@ exportHxPerf.m                                                                  
 4. **压力单位约定：** 所有 `p_*` 变量为 MPa，`dp_tube` 为 MPa（显示时 ×1e6 转 Pa），`bend_cal_phase1` 返回 Pa，`bend_cal` 返回 MPa。
 
 5. **HX_Path_Planner1 窗口持久化：** 点击关闭按钮隐藏而非销毁，句柄保存在 `hxDesigner`，`figure(hxDesigner)` 可随时唤出。
+
+---
+
+## 七、已知问题与经验
+
+### 7.1 流量初始化解与压降负值问题
+
+**症状**：管压降 `dp_tube` 计算为负值，导致 `R_flow` 和 `dp_Pa` 为负，流量重分配牛顿迭代发散，最终 DryA_cal_10 因温度变复数崩溃。
+
+**根因链路**：
+
+```
+mdot_Initial 用 linprog 作流量初始化（epsilon = mdot_inlet/4）
+  → 部分支路分配到大流量、部分支路分配到极小流量
+  → Xu-Fang 2013 冷凝关联式的摩擦压降 dp_f ∝ G²·L_tot
+  → 极小流量管的 dp_f 可低至个位数 Pa
+  → 速度压损 dp_v = 16·mdot²/(π²D⁴)·(1/ρ_out − 1/ρ_in)
+  → 当工质压力降低同时密度减小（冷凝段：液相→气相膨胀），ρ_out < ρ_in
+  → (1/ρ_out − 1/ρ_in) > 0 → dp_v > 0
+  → dp_v > dp_f → 总压降 dp = dp_f + dp_v 为负
+  → 管出口压力 > 管入口压力（物理上不可能）
+  → 求解器发散
+```
+
+**修复**（mdot_Initial.m）：调整初始流量场的下界限制，确保每根管的最小流量足以让摩擦压降主导速度压损。具体做法是将 `epsilon` 从 `mdot_R_inlet/4` 收紧或改为按管数均分的初始值，让所有支路的初始流量在一个量级上。
