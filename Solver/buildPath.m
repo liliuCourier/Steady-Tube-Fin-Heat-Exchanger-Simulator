@@ -1,4 +1,4 @@
-function [heatPaths, pdropPaths,predecessors_in,predecessors_out] = buildPaths(A, N)
+function [heatPaths, pdropPaths,predecessors_in,predecessors_out] = buildPath(A, N)
     [n_nodes, n_pipes] = size(A);
     
     % ---------- 解析每根管的流入/流出节点 ----------

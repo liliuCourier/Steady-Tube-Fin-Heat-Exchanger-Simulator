@@ -63,16 +63,24 @@ else
 end
 
 % 计算流速
-veloctiy_CV = (mdot/D_CV)/S;
+velocity_CV = (mdot/D_CV)/S;
 
 %% Correlation area 关联式区域
 
+% 根据静态干度x推导动态干度
+
+% Nu是kinetic viscosity
+
 % 计算单相压降
 % 使用单相流量，但是单相物性
-Re_go = abs(mdot)*D_inner/(S*Nusatvap_CV*1e-6);
-Re_lo = abs(mdot)*D_inner/(S*Nusatliq_CV*1e-6);
+Re_go = abs(mdot)*D_inner/(S*Nusatvap_CV*1e-6/vsatvap_CV);
+Re_lo = abs(mdot)*D_inner/(S*Nusatliq_CV*1e-6/vsatliq_CV);
 
 Re_lam = 2000;  Re_tur = 3000;
+
+r = 0;  % FIXME: 调试冻结值。GeoCondition.r 在 1e-5/1e-6 时总压降差一倍，待排查关联式敏感性后再解冻
+% f_go = 8*((8/Re_go)^12 + 1/((2.457*log((7/Re_go)^0.9 + 0.27*(r/D_inner)))^16 + (37530/Re_go)^16)^(3/2))^(1/12);
+% f_lo = 8*((8/Re_lo)^12 + 1/((2.457*log((7/Re_lo)^0.9 + 0.27*(r/D_inner)))^16 + (37530/Re_lo)^16)^(3/2))^(1/12);
 
 if Re_go <= Re_lam
     f_go = 64 / Re_go;
@@ -94,15 +102,20 @@ dpdL_lo = f_lo*(abs(mdot)/S)^2/(2*D_inner/vsatliq_CV);
 dpdL_go = f_go*(abs(mdot)/S)^2/(2*D_inner/vsatvap_CV);
 
 % Xu-Fang 2013 冷凝两相摩擦压降(NED 263, 87-96)
+% 静态干度 → 动态干度 (Zivi滑移模型 S=(ρl/ρg)^(1/3))
+S_slip = (vsatvap_CV/vsatliq_CV)^(1/3);
+alpha = x_CV*vsatvap_CV/(x_CV*vsatvap_CV + (1-x_CV)*vsatliq_CV);
+x_dyn = 1/(1 + (1-alpha)/alpha * (vsatvap_CV/vsatliq_CV)/S_slip);
+%x_dyn = x_CV;
 % 适用范围: R134a,R22,R410A 等, Dh 0.1–10mm, G 20–800, q 2–55.3
 Y = sqrt(dpdL_go / dpdL_lo);
-rho_tp = 1 / (x_CV*vsatvap_CV + (1-x_CV)*vsatliq_CV);  % 均相密度
+rho_tp = 1 / (x_dyn*vsatvap_CV + (1-x_dyn)*vsatliq_CV);
 g_acc = 9.81;
 Fr_tp = (abs(mdot)/S)^2 / (g_acc * D_inner * rho_tp^2);
-sigma = 0.0062;  % N/m, R134a 冷凝近似值
+sigma = 0.002;
 We_tp = (abs(mdot)/S)^2 * D_inner / (rho_tp * sigma);
-phi2_lo = Y^2 * x_CV^3 + (1 - x_CV^2.59)^0.632 * ...
-    (1 + 2*x_CV^1.17*(Y^2 - 1) + 0.00775*x_CV^(-0.475)*Fr_tp^0.535*We_tp^0.188);
+phi2_lo = Y^2 * x_dyn^3 + (1 - x_dyn^2.59)^0.632 * ...
+    (1 + 2*x_dyn^1.17*(Y^2 - 1) + 0.00775*x_dyn^(-0.475)*Fr_tp^0.535*We_tp^0.188);
 dp_f_CV = phi2_lo * dpdL_lo * L/CV_num;
 
 %% Müller-Steinhagen and Heck (1986) — 保留备查
@@ -145,7 +158,7 @@ dp =    dp_f_CV + dp_v_CV;
 %     pause()
 % end
 
-Re_1P = abs(veloctiy_CV)*D_inner/(Nu_CV*1e-6);
+Re_1P = abs(velocity_CV)*D_inner/(Nu_CV*1e-6);
 Re_2P = abs(mdot).*(1-x_CV + x_CV.*sqrt(vsatvap_CV./vsatliq_CV))*D_inner/S./(Nusatliq_CV*1e-6./vsatliq_CV);
 f_CV =      (-1.8*log10(6.9./Re_1P+(r/3.7)^1.11)).^(-2);
 % 单相换热 Gnielinski，层流-湍流 1000~1200 线性光滑过渡
@@ -178,7 +191,7 @@ dEF = mdot.*(hin - hout);
 
 % if h_R == 0
 %     pause()
-% 
+%
 % end
 
 %%

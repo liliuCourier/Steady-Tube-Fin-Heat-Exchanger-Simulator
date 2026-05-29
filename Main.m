@@ -109,7 +109,7 @@ for i1 = 1:loopmax
     [h_R_in, h_R_out, T_MA_in, T_MA_out, ...
         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
         dp_tube, residual_max, ...
-        h_R_tube_outlet,h_R_tube_intlet, p_R_tube_outlet,p_R_tube_inlet] = scanTubes(...
+        h_R_tube_outlet,h_R_tube_inlet, p_R_tube_outlet,p_R_tube_inlet] = scanTubes(...
         heatPaths, predecessors_in, predecessors_out, ...
         h_R_in, h_R_out, T_MA_in, T_MA_out, ...
         p_R_in, p_R_out, p_MA_in, p_MA_out, ...
@@ -565,9 +565,9 @@ for i2 = 1:nTubes
         p_R_in(:, tube) = p_R_in_tube;
         p_MA_in = [p_MA_inlet * ones(CV_num, row), p_MA_out(:, 1:end-row)];
     end
-    if any(dp_tube<0)
-        pause()
-    end
+    % if any(dp_tube<0)
+    %     pause()
+    % end
 end
 end
 
@@ -580,11 +580,14 @@ for i = 1:100
     [~,~,~,~, x_CV, ~,vsatliq_CV,vsatvap_CV,...
          ~, ~, Nuliq, Nuvap,~, ~] = Prop1(p_avg, h_in, Ph);
 
-    Re_go = G*D_inner/(Nuvap*1e-6);
-    Re_lo = G*D_inner/(Nuliq*1e-6);
+    Re_go = G*D_inner/(Nuvap*1e-6/vsatvap_CV);
+    Re_lo = G*D_inner/(Nuliq*1e-6/vsatliq_CV);
 
     Re_lam = 2000;  Re_tur = 3000;
 
+    r = 0;
+    % f_go = 8*((8/Re_go)^12 + 1/((2.457*log((7/Re_go)^0.9 + 0.27*(r/D_inner)))^16 + (37530/Re_go)^16)^(3/2))^(1/12);
+    % f_lo = 8*((8/Re_lo)^12 + 1/((2.457*log((7/Re_lo)^0.9 + 0.27*(r/D_inner)))^16 + (37530/Re_lo)^16)^(3/2))^(1/12);
     if Re_go <= Re_lam
         f_go = 64 / Re_go;
     elseif Re_go > Re_tur
@@ -606,14 +609,19 @@ for i = 1:100
 
     % Xu-Fang 2013 冷凝两相摩擦压降(NED 263, 87-96)
     % 适用范围: R134a,R22,R410A 等, Dh 0.1–10mm, G 20–800, q 2–55.3
+    S_slip = (vsatvap_CV/vsatliq_CV)^(1/3);
+    alpha = x_CV*vsatvap_CV/(x_CV*vsatvap_CV + (1-x_CV)*vsatliq_CV);
+    x_dyn = 1/(1 + (1-alpha)/alpha * (vsatvap_CV/vsatliq_CV)/S_slip);
+   
     Y = sqrt(dpdL_go / dpdL_lo);
-    rho_tp = 1 / (x_CV*vsatvap_CV + (1-x_CV)*vsatliq_CV);  % 均相密度
+    rho_tp = 1 / (x_dyn*vsatvap_CV + (1-x_dyn)*vsatliq_CV);
     g_acc = 9.81;
     Fr_tp = (abs(mdot)/S)^2 / (g_acc * D_inner * rho_tp^2);
-    sigma = 0.008;  % N/m, R134a 冷凝近似值
+    sigma = 0.002;
     We_tp = (abs(mdot)/S)^2 * D_inner / (rho_tp * sigma);
-    phi2_lo = Y^2 * x_CV^3 + (1 - x_CV^2.59)^0.632 * ...
-        (1 + 2*x_CV^1.17*(Y^2 - 1) + 0.00775*x_CV^(-0.475)*Fr_tp^0.535*We_tp^0.188);
+    phi2_lo = Y^2 * x_dyn^3 + (1 - x_dyn^2.59)^0.632 * ...
+        (1 + 2*x_dyn^1.17*(Y^2 - 1) + 0.00775*x_dyn^(-0.475)*Fr_tp^0.535*We_tp^0.188);
+
     L = 30*D_inner;
     dp_b = phi2_lo * dpdL_lo * L;
 
